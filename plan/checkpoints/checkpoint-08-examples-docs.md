@@ -404,7 +404,7 @@ HTTP 서비스를 서브패스로 노출합니다.
 
 ### 1. 필수 구성 요소
 - Ubuntu 20.04+ 또는 CentOS 8+
-- Nginx 1.18+
+- FRP Server 0.52.0+
 - Python 3.8+
 - 도메인 및 SSL 인증서
 
@@ -415,7 +415,7 @@ curl -sSL https://example.com/install.sh | bash
 
 # 또는 수동 설치
 apt-get update
-apt-get install -y nginx certbot python3-certbot-nginx
+apt-get install -y frps certbot
 ```
 
 ...

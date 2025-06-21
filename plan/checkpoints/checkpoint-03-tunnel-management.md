@@ -83,7 +83,8 @@ class TCPTunnel(Tunnel):
 class HTTPTunnel(Tunnel):
     """HTTP 터널 타입"""
     path: Optional[str] = None
-    vhost: Optional[str] = None
+    custom_domains: List[str] = field(default_factory=list)
+    locations: List[str] = field(default_factory=list)
     
     @property
     def url(self) -> Optional[str]:
@@ -191,8 +192,10 @@ def tunnel_to_config_entry(tunnel: Tunnel) -> Dict[str, Any]:
     if isinstance(tunnel, TCPTunnel) and tunnel.config.remote_port:
         entry['remote_port'] = tunnel.config.remote_port.value
     elif isinstance(tunnel, HTTPTunnel):
-        if tunnel.vhost:
-            entry['custom_domains'] = tunnel.vhost
+        if tunnel.custom_domains:
+            entry['custom_domains'] = tunnel.custom_domains
+        if tunnel.locations:
+            entry['locations'] = tunnel.locations
         # 추가 HTTP 설정
     
     # 추가 옵션

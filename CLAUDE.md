@@ -4,12 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FRP Python Wrapper is a self-hostable tunneling solution (like ngrok) focusing on **subpath routing** (https://example.com/myapp/) instead of subdomain routing. The design emphasizes:
+FRP Python Wrapper is a self-hostable tunneling solution (like ngrok) that leverages FRP's native **locations** feature for path-based routing (https://example.com/myapp/). The design emphasizes:
 - **Functional Programming**: Immutable data structures, pure functions, explicit effects
 - **Domain-Driven Design**: Clear separation of business logic and side effects
 - **AI-Friendly Architecture**: Minimal context coupling for easier understanding
+- **Native FRP Features**: Direct use of FRP's locations parameter for simplicity
 
 ## Development Commands
+
+**Note**: This project is currently in the design phase. The following commands will be available once implementation begins.
 
 ### Setting up the environment
 ```bash
@@ -22,6 +25,10 @@ pip install -e ".[dev]"
 
 # Install pre-commit hooks (once configured)
 pre-commit install
+
+# Install FRP binary (required external dependency)
+# Download from: https://github.com/fatedier/frp/releases
+# Or use the provided installation script (to be created)
 ```
 
 ### Running tests
@@ -79,15 +86,24 @@ python -m twine upload dist/*
 
 ### Key Design Patterns
 
-1. **Result Monad**: All operations return `Result[T, E]` for explicit error handling
+1. **Dual API Design**: Simple API for ease of use, Functional API for power users
    ```python
+   # Simple API (기본)
+   try:
+       url = create_tunnel("example.com", 3000, "/myapp")
+   except TunnelError as e:
+       print(f"Error: {e}")
+   
+   # Functional API (고급)
    result = create_client("server.com")
    match result:
        case Ok(client): # handle success
        case Err(error): # handle error
    ```
 
-2. **Pipeline Pattern**: Function composition for complex operations
+2. **Result Monad** (내부 구현): All internal operations use `Result[T, E]` for explicit error handling
+
+3. **Pipeline Pattern** (고급 기능): Function composition for complex operations
    ```python
    pipeline = pipe(
        create_http_tunnel,
@@ -96,17 +112,30 @@ python -m twine upload dist/*
    )
    ```
 
-3. **Event Sourcing**: All state changes tracked as immutable events
+4. **Event Sourcing**: All state changes tracked as immutable events
 
 ### Directory Structure
 ```
 src/
-├── domain/       # Immutable domain models (@frozen dataclasses)
-├── core/         # Pure business logic functions
-├── effects/      # Side effect protocols and implementations
-├── application/  # Service layer combining pure functions with effects
-├── infrastructure/ # External system adapters
-└── api/          # Public API functions
+├── frp_wrapper/
+│   ├── __init__.py      # Simple API exports (기본)
+│   ├── simple/          # Simple Python API
+│   │   ├── client.py    # 간단한 클라이언트 API
+│   │   ├── tunnel.py    # 터널 관리 함수
+│   │   └── exceptions.py # 예외 클래스
+│   ├── functional/      # Advanced Functional API
+│   │   ├── client.py    # Result 기반 클라이언트
+│   │   ├── pipeline.py  # 파이프라인 패턴
+│   │   └── result.py    # Result 타입 정의
+│   ├── domain/          # Immutable domain models
+│   ├── core/            # Pure business logic
+│   ├── effects/         # Side effect protocols
+│   ├── application/     # Service layer
+│   └── infrastructure/  # External adapters
+deploy/
+├── docker/              # Docker 관련 파일
+├── k8s/                 # Kubernetes 매니페스트
+└── systemd/             # SystemD 서비스 파일
 ```
 
 ## Core Concepts
@@ -124,29 +153,72 @@ src/
 4. **Function Composition**: Complex operations built from simple functions
 
 ### Subpath Routing Mechanism
-The wrapper implements subpath routing using virtual host mapping:
+The wrapper uses FRP's native `locations` feature for path-based routing:
 ```
 User Request: https://example.com/myapp/api
     ↓
-Nginx: Extract path, set Host header to "myapp.local"
-    ↓
-FRP Server: Route based on vhost
+FRP Server: Route based on locations ["/myapp"]
     ↓
 Local Service: Receive request on port 3000
+```
+
+FRP Configuration:
+```toml
+[[proxies]]
+name = "myapp"
+type = "http"
+localPort = 3000
+customDomains = ["example.com"]
+locations = ["/myapp"]  # Native path routing!
 ```
 
 ## Development Workflow
 
 ### Checkpoint-Based PRs
-The project is divided into 8 checkpoints, each representing a PR-sized unit:
-1. Process Manager (도메인 모델, 프로세스 관리)
-2. Basic Client (클라이언트 API)
-3. Tunnel Management (터널 생성/삭제)
-4. Path Routing (서브패스 라우팅)
-5. Context Manager (리소스 자동 관리)
-6. Server Tools (서버 설정 도구)
-7. Monitoring (로깅, 상태 추적)
-8. Examples & Docs (예제, 문서화)
+The project is divided into 8 checkpoints, organized in 3 phases:
+
+#### Phase 1: Core Foundation
+1. **Process Manager**
+   - FRP binary process management
+   - Process lifecycle management
+   - Configuration file handling
+
+2. **Basic Client**
+   - FRP client connection management
+   - Simple API design (예외 기반)
+   - Connection state management
+
+3. **Tunnel Management**
+   - HTTP/TCP tunnel creation
+   - Tunnel lifecycle management
+   - Basic error handling
+
+#### Phase 2: Advanced Features
+4. **Path Routing**
+   - FRP locations-based routing implementation
+   - Direct path routing using FRP native features
+   - Custom domains and locations
+
+5. **Context Manager**
+   - Automatic resource cleanup
+   - Context manager patterns
+   - Resource lifecycle management
+
+6. **Server Tools**
+   - FRP server configuration tools
+   - SSL certificate management
+   - Server installation scripts
+
+#### Phase 3: Production Ready
+7. **Monitoring & Observability**
+   - Structured logging
+   - Metrics collection
+   - Error tracking
+
+8. **Examples & Documentation**
+   - Comprehensive examples
+   - API documentation
+   - Deployment guides
 
 ### Testing Strategy
 1. **Pure Function Tests**: Simple input/output validation
@@ -169,11 +241,14 @@ process_executor.spawn.return_value = Ok(12345)
 
 ## Important Notes
 
-1. **No Code Yet**: This is a design-phase project. Implement following the functional patterns in docs/
-2. **Korean Comments**: Some documentation includes Korean (도메인, 유스케이스, etc.)
-3. **Result Type First**: Always use Result[T, E] instead of exceptions
-4. **Immutable First**: Create new instances instead of modifying existing ones
-5. **Test Pure Functions**: Focus testing on pure functions, mock effects
+1. **Design Phase Project**: This is currently in the design and documentation phase. Implementation follows the checkpoint-based approach outlined below.
+2. **External Dependencies**: Requires FRP binary (https://github.com/fatedier/frp) - the wrapper orchestrates FRP processes rather than reimplementing the protocol
+3. **Korean Documentation**: Some documentation includes Korean annotations (도메인, 유스케이스, etc.) - this is intentional for the target audience
+4. **Dual API Strategy**: 
+   - Simple API (외부): Python exceptions for user-friendly interface
+   - Functional Core (내부): Result[T, E] for internal operations
+5. **Immutable First**: Create new instances instead of modifying existing ones
+6. **FRP Configuration**: Uses TOML format with customDomains and locations for path-based routing
 
 ## Common Tasks
 
@@ -190,9 +265,26 @@ process_executor.spawn.return_value = Ok(12345)
 4. Expose through API layer
 5. Write tests: pure functions → mocked effects → integration
 
-### Running Specific Checkpoint Tests
+### Working with Documentation
 ```bash
-# Test specific checkpoint implementation
+# View architecture documentation
+cat docs/architecture/domain-model.md
+cat plan/01-architecture.md
+
+# Review checkpoint progress
+ls plan/checkpoints/
+
+# View API specifications  
+cat docs/spec/01-api-spec.md
+
+# Check deployment configurations
+ls deploy/docker/
+ls deploy/k8s/
+```
+
+### Running Specific Checkpoint Tests (Future)
+```bash
+# Test specific checkpoint implementation (once implemented)
 pytest tests/test_checkpoint_01_process_manager.py
 pytest tests/test_checkpoint_02_basic_client.py
 # etc...

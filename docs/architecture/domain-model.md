@@ -194,16 +194,18 @@ class TCPTunnel(Tunnel):
 class HTTPTunnel(Tunnel):
     """HTTP 터널"""
     path: Optional[Path] = None
-    vhost: Optional[str] = None
+    custom_domains: List[str] = field(default_factory=list)
+    locations: List[str] = field(default_factory=list)
     strip_path: bool = True
     websocket: bool = True
     
     @property
     def url(self) -> Optional[str]:
         """터널 접속 URL"""
-        if self.status == "connected" and self.path:
-            # base_url은 context에서 제공
-            return f"{base_url}/{self.path.value}/"
+        if self.status == "connected" and self.custom_domains and self.locations:
+            domain = self.custom_domains[0]
+            location = self.locations[0]
+            return f"https://{domain}{location}/"
         return None
 ```
 
@@ -227,6 +229,8 @@ class TunnelConfigEntry:
     name: str
     tunnel_type: str
     local_port: int
+    custom_domains: List[str] = field(default_factory=list)
+    locations: List[str] = field(default_factory=list)
     remote_config: Dict[str, Any] = field(default_factory=dict)
 
 @frozen

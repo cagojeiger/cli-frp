@@ -19,18 +19,16 @@
 ### 시스템 구성도
 
 ```
-┌─────────────────┐     HTTPS      ┌──────────────────┐
-│   외부 사용자    │ ─────────────> │   Nginx (443)    │
-└─────────────────┘                 └────────┬─────────┘
-                                             │
-                                    ┌────────┴─────────┐
-                                    │  /myapp/* → :8080│
-                                    │  Host: myapp.local│
+┌─────────────────┐     HTTPS       ┌──────────────────┐
+│   외부 사용자    │ ─────────────> │   FRP Server     │
+└─────────────────┘  example.com    │   (7000, 8080)   │
+                      /myapp/*      │                  │
+                                    │ locations 라우팅  │
                                     └────────┬─────────┘
                                              │
 ┌─────────────────┐     Control     ┌────────┴─────────┐
-│   FRP Client    │ <─────────────> │   FRP Server     │
-│   (Python)      │     (7000)      │   (7000, 8080)   │
+│   FRP Client    │ <─────────────> │  FRP Control     │
+│   (Python)      │     (7000)      │   Connection     │
 └────────┬────────┘                 └──────────────────┘
          │
 ┌────────┴────────┐
@@ -71,6 +69,24 @@ Effect Handlers (I/O Operations)
     │
     ▼
 Result<Success, Error>
+```
+
+### FRP 프록시 설정 플로우
+
+```
+API Call: create_tunnel(domain, port, path)
+    │
+    ▼
+Generate FRP Config with locations
+    │
+    ▼
+Write TOML Configuration
+    │
+    ▼
+Start/Reload FRP Client
+    │
+    ▼
+Return URL: https://domain/path/
 ```
 
 ## 핵심 도메인 모델
@@ -318,7 +334,8 @@ class Tunnel:
 class HTTPTunnel(Tunnel):
     """HTTP 전용 터널"""
     tunnel_type: str = "http"
-    vhost: Optional[str] = None
+    custom_domains: List[str] = field(default_factory=list)
+    locations: List[str] = field(default_factory=list)
     strip_path: bool = True
     websocket: bool = True
 ```
@@ -331,6 +348,7 @@ from src.domain.tunnel import Tunnel, TunnelId, Port, Path
 from src.domain.events import TunnelCreated, TunnelConnected
 
 def create_http_tunnel(
+    domain: str,
     local_port: int,
     path: str,
     strip_path: bool = True
@@ -340,8 +358,9 @@ def create_http_tunnel(
         id=TunnelId(str(uuid.uuid4())),
         local_port=Port(local_port),
         path=Path(path),
-        strip_path=strip_path,
-        vhost=f"{path}.local"
+        custom_domains=[domain],
+        locations=[path],
+        strip_path=strip_path
     )
 
 def connect_tunnel(
@@ -365,12 +384,15 @@ def connect_tunnel(
 
 def generate_tunnel_url(
     tunnel: HTTPTunnel,
-    base_url: str
+    base_url: str = None
 ) -> str:
     """터널 URL 생성 - 순수 함수"""
-    if tunnel.path:
-        return f"{base_url}/{tunnel.path.value}/"
-    return f"{base_url}/"
+    # 커스텀 도메인과 locations를 사용
+    if tunnel.custom_domains and tunnel.locations:
+        domain = tunnel.custom_domains[0]
+        location = tunnel.locations[0]
+        return f"https://{domain}{location}/"
+    return base_url or "https://example.com/"
 ```
 
 ## 4. Application Services (애플리케이션 서비스)
@@ -458,32 +480,37 @@ def create_and_connect_tunnel(
 
 ## 서브패스 라우팅 메커니즘
 
-### 문제점
-FRP는 기본적으로 서브도메인 방식 지원 (예: `app.example.com`)하지만 서브패스 방식(예: `example.com/app`)은 직접 지원하지 않음.
+### FRP의 locations 기능 활용
+FRP는 `locations` 파라미터를 통해 경로 기반 라우팅을 네이티브로 지원합니다.
 
-### 해결 방안
+### 구현 방식
 
-1. **가상 호스트 매핑**
-   ```
-   /myapp/* → Host: myapp.local → FRP vhost → Local:3000
-   ```
-
-2. **Nginx 라우팅 규칙**
-   ```nginx
-   location ~ ^/([^/]+)/(.*) {
-       set $app_name $1;
-       proxy_pass http://localhost:8080;
-       proxy_set_header Host $app_name.local;
-       proxy_set_header X-Original-Path $uri;
-   }
+1. **FRP locations 설정**
+   ```toml
+   [[proxies]]
+   name = "myapp"
+   type = "http"
+   localPort = 3000
+   customDomains = ["example.com"]
+   locations = ["/myapp"]  # 경로 기반 라우팅
    ```
 
-3. **클라이언트 설정**
-   ```ini
-   [myapp]
-   type = http
-   local_port = 3000
-   custom_domains = myapp.local
+2. **Python 클라이언트 구현**
+   ```python
+   def create_tunnel(domain: str, port: int, path: str) -> str:
+       config = {
+           "name": f"tunnel_{path}",
+           "type": "http",
+           "localPort": port,
+           "customDomains": [domain],
+           "locations": [path]
+       }
+       return frp_client.create_proxy(config)
+   ```
+
+3. **요청 흐름**
+   ```
+   https://example.com/myapp/api → FRP Server → Local:3000/api
    ```
 
 ## 데이터 흐름
@@ -509,19 +536,14 @@ FRP는 기본적으로 서브도메인 방식 지원 (예: `app.example.com`)하
 ### 요청 처리 과정
 
 1. **외부 요청**
-   - `https://tunnel.example.com/myapp/api/users`
+   - `https://example.com/myapp/api/users`
 
-2. **Nginx 처리**
-   - 경로 파싱: `app_name=myapp`, `path=/api/users`
-   - Host 헤더 설정: `myapp.local`
-   - FRP HTTP 포트(8080)로 프록시
-
-3. **FRP 서버**
-   - Host 헤더 기반 라우팅
+2. **FRP 서버 처리**
+   - locations 기반 라우팅: `/myapp` → 해당 프록시
    - 해당 클라이언트로 전달
 
-4. **로컬 서비스**
-   - 원본 경로 복원 (옵션)
+3. **로컬 서비스**
+   - 요청 수신: `/api/users` (strip_path 옵션에 따라)
    - 응답 생성
 
 ## 에러 처리 전략

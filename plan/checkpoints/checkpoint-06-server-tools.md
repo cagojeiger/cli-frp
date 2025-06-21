@@ -1,455 +1,267 @@
-# Checkpoint 6: 서버 설정 도구
+# Checkpoint 6: FRP 서버 설정 도구
 
 ## 개요
-FRP 서버와 Nginx를 설정하고 관리하는 도구를 제공합니다. 서브패스 라우팅을 위한 서버 측 설정을 자동화하고, 배포를 간소화합니다.
+FRP 서버 설정 및 관리를 자동화하는 도구를 제공합니다. locations 기능을 활용한 경로 기반 라우팅을 위한 서버 측 설정을 간소화합니다.
 
 ## 목표
-- Nginx 설정 파일 자동 생성
-- FRP 서버 설정 관리
-- SSL 인증서 통합
+- FRP 서버 설정 파일 자동 생성
+- SSL/TLS 인증서 관리
+- 서버 모니터링 및 관리
 - 설치 및 배포 스크립트
 
 ## 구현 범위
 
-### 1. Nginx 설정 생성기
+### 1. FRP 서버 설정 생성기
 ```python
-class NginxConfigBuilder:
-    """Nginx 설정을 동적으로 생성하는 클래스"""
-    
-    def __init__(
-        self,
-        domain: str,
-        ssl_cert_path: Optional[str] = None,
-        ssl_key_path: Optional[str] = None
-    ):
-        self.domain = domain
-        self.ssl_cert_path = ssl_cert_path
-        self.ssl_key_path = ssl_key_path
-        self.frp_http_port = 8080
-        self.paths: List[PathConfig] = []
-        
-    def add_path(
-        self,
-        path: str,
-        vhost: str,
-        options: Optional[Dict[str, Any]] = None
-    ) -> 'NginxConfigBuilder':
-        """서브패스 라우팅 규칙 추가"""
-        
-    def set_ssl(
-        self,
-        cert_path: str,
-        key_path: str,
-        dhparam_path: Optional[str] = None
-    ) -> 'NginxConfigBuilder':
-        """SSL 설정"""
-        
-    def build(self) -> str:
-        """완전한 Nginx 설정 파일 생성"""
-        
-    def write_config(self, output_path: str) -> None:
-        """설정 파일 저장"""
-
 @dataclass
-class PathConfig:
-    """개별 경로 설정"""
-    path: str
-    vhost: str
-    strip_path: bool = True
-    websocket: bool = True
-    custom_headers: Dict[str, str] = field(default_factory=dict)
-    rate_limit: Optional[str] = None
-```
-
-### 2. FRP 서버 설정 관리
-```python
 class FRPServerConfig:
-    """FRP 서버 설정 관리"""
+    """FRP 서버 설정"""
+    bind_port: int = 7000
+    vhost_http_port: int = 80
+    vhost_https_port: int = 443
+    dashboard_port: int = 7500
+    token: Optional[str] = None
+    subdomain_host: str = "tunnel.example.com"
     
-    def __init__(self):
-        self.bind_port = 7000
-        self.vhost_http_port = 8080
-        self.dashboard_port = 7500
-        self.auth_token = None
-        self.allow_ports = []
-        
-    def set_auth(self, token: str) -> 'FRPServerConfig':
-        """인증 토큰 설정"""
-        
-    def set_dashboard(
-        self,
-        port: int,
-        user: str,
-        password: str
-    ) -> 'FRPServerConfig':
-        """대시보드 설정"""
-        
-    def add_allowed_ports(self, ports: List[int]) -> 'FRPServerConfig':
-        """허용 포트 추가"""
-        
-    def generate_ini(self) -> str:
-        """frps.ini 파일 생성"""
-        
-    def generate_systemd_service(self) -> str:
-        """systemd 서비스 파일 생성"""
-```
-
-### 3. 서버 설정 자동화
-```python
-class ServerSetup:
-    """서버 설정 자동화 도구"""
+class FRPServerConfigBuilder:
+    """FRP 서버 설정을 동적으로 생성하는 클래스"""
     
     def __init__(self, domain: str):
         self.domain = domain
-        self.nginx_config = NginxConfigBuilder(domain)
-        self.frp_config = FRPServerConfig()
+        self.config = FRPServerConfig()
         
-    def setup_ssl_with_letsencrypt(self, email: str) -> None:
-        """Let's Encrypt로 SSL 인증서 자동 설정"""
+    def set_ports(self, bind_port: int = 7000, http_port: int = 80, https_port: int = 443):
+        """포트 설정"""
         
-    def install_dependencies(self) -> None:
-        """필요한 패키지 설치"""
+    def enable_dashboard(self, port: int = 7500, user: str = "admin", password: str = None):
+        """대시보드 활성화"""
         
-    def configure_firewall(self, ports: List[int]) -> None:
-        """방화벽 규칙 설정"""
+    def set_auth_token(self, token: str):
+        """인증 토큰 설정"""
         
-    def deploy(self) -> None:
-        """전체 배포 프로세스 실행"""
-        
-    def generate_setup_script(self) -> str:
-        """설치 스크립트 생성"""
+    def generate_config(self) -> str:
+        """FRP 서버 TOML 설정 생성"""
 ```
 
-### 4. 모니터링 및 관리 도구
+### 2. SSL 인증서 관리
 ```python
-class ServerManager:
-    """서버 상태 모니터링 및 관리"""
+class SSLManager:
+    """SSL 인증서 관리"""
+    
+    def __init__(self, domain: str, email: str):
+        self.domain = domain
+        self.email = email
+        
+    def setup_certbot(self) -> bool:
+        """Certbot 설정 및 인증서 발급"""
+        
+    def renew_certificates(self) -> bool:
+        """인증서 갱신"""
+        
+    def get_cert_paths(self) -> Tuple[str, str]:
+        """인증서 파일 경로 반환"""
+```
+
+### 3. 서버 관리자
+```python
+class FRPServerManager:
+    """FRP 서버 관리"""
     
     def __init__(self, config_path: str):
         self.config_path = config_path
         
-    def get_status(self) -> Dict[str, Any]:
-        """서버 상태 조회"""
+    def start_server(self) -> ProcessId:
+        """FRP 서버 시작"""
         
-    def reload_nginx(self) -> None:
-        """Nginx 설정 리로드"""
+    def stop_server(self, process_id: ProcessId) -> bool:
+        """FRP 서버 중지"""
         
-    def restart_frp_server(self) -> None:
-        """FRP 서버 재시작"""
+    def reload_config(self) -> bool:
+        """설정 리로드"""
         
-    def list_active_tunnels(self) -> List[Dict[str, Any]]:
-        """활성 터널 목록 조회"""
-        
-    def add_path_mapping(self, path: str, vhost: str) -> None:
-        """새 경로 매핑 추가"""
+    def get_server_status(self) -> Dict[str, Any]:
+        """서버 상태 확인"""
 ```
 
 ## 테스트 시나리오
 
 ### 유닛 테스트
 
-1. **Nginx 설정 생성**
+1. **FRP 서버 설정 생성**
    ```python
-   def test_nginx_config_generation():
-       builder = NginxConfigBuilder("tunnel.example.com")
-       builder.add_path("app1", "app1.local")
-       builder.add_path("app2", "app2.local", {
-           "rate_limit": "10r/s"
-       })
+   def test_frp_server_config_generation():
+       builder = FRPServerConfigBuilder("tunnel.example.com")
+       builder.set_ports(7000, 80, 443)
+       builder.enable_dashboard(7500, "admin", "secret")
        
-       config = builder.build()
+       config = builder.generate_config()
        
-       assert "server_name tunnel.example.com" in config
-       assert "location ~ ^/app1/" in config
-       assert "proxy_set_header Host app1.local" in config
-       assert "limit_req" in config  # rate limiting
+       assert "bindPort = 7000" in config
+       assert "vhostHTTPPort = 80" in config
+       assert "vhostHTTPSPort = 443" in config
+       assert "[webServer]" in config
+       assert "port = 7500" in config
    ```
 
-2. **SSL 설정**
+2. **SSL 관리**
    ```python
-   def test_ssl_configuration():
-       builder = NginxConfigBuilder("tunnel.example.com")
-       builder.set_ssl(
-           "/etc/ssl/cert.pem",
-           "/etc/ssl/key.pem"
-       )
+   def test_ssl_certificate_setup():
+       ssl_manager = SSLManager("tunnel.example.com", "admin@example.com")
        
-       config = builder.build()
+       # Mock certbot operations
+       result = ssl_manager.setup_certbot()
+       assert result is True
        
-       assert "listen 443 ssl http2" in config
-       assert "ssl_certificate /etc/ssl/cert.pem" in config
-       assert "ssl_protocols TLSv1.2 TLSv1.3" in config
-   ```
-
-3. **FRP 서버 설정**
-   ```python
-   def test_frp_server_config():
-       config = FRPServerConfig()
-       config.set_auth("secret123")
-       config.set_dashboard(7500, "admin", "password")
-       config.add_allowed_ports([20000, 30000])
-       
-       ini_content = config.generate_ini()
-       
-       assert "[common]" in ini_content
-       assert "bind_port = 7000" in ini_content
-       assert "token = secret123" in ini_content
-       assert "allow_ports = 20000-30000" in ini_content
-   ```
-
-4. **Systemd 서비스 생성**
-   ```python
-   def test_systemd_service():
-       config = FRPServerConfig()
-       service = config.generate_systemd_service()
-       
-       assert "[Unit]" in service
-       assert "Description=FRP Server" in service
-       assert "ExecStart=/usr/local/bin/frps" in service
-       assert "Restart=always" in service
+       cert_path, key_path = ssl_manager.get_cert_paths()
+       assert cert_path.endswith("fullchain.pem")
+       assert key_path.endswith("privkey.pem")
    ```
 
 ### 통합 테스트
 
-1. **완전한 서버 설정**
+1. **전체 서버 설정**
    ```python
-   @pytest.mark.integration
    def test_complete_server_setup():
-       setup = ServerSetup("test.example.com")
+       # 1. 설정 생성
+       builder = FRPServerConfigBuilder("tunnel.example.com")
+       config = builder.generate_config()
        
-       # 경로 추가
-       setup.nginx_config.add_path("api", "api.local")
-       setup.nginx_config.add_path("web", "web.local")
+       # 2. 설정 파일 저장
+       config_path = "/tmp/frps.toml"
+       with open(config_path, 'w') as f:
+           f.write(config)
        
-       # FRP 설정
-       setup.frp_config.set_auth("test_token")
+       # 3. 서버 시작
+       manager = FRPServerManager(config_path)
+       process_id = manager.start_server()
        
-       # 설정 파일 생성
-       with tempfile.TemporaryDirectory() as tmpdir:
-           nginx_path = os.path.join(tmpdir, "nginx.conf")
-           frp_path = os.path.join(tmpdir, "frps.ini")
-           
-           setup.nginx_config.write_config(nginx_path)
-           with open(frp_path, 'w') as f:
-               f.write(setup.frp_config.generate_ini())
-           
-           # 설정 검증
-           assert os.path.exists(nginx_path)
-           assert os.path.exists(frp_path)
+       # 4. 상태 확인
+       status = manager.get_server_status()
+       assert status['running'] is True
    ```
 
-2. **설치 스크립트 생성**
-   ```python
-   def test_setup_script_generation():
-       setup = ServerSetup("tunnel.example.com")
-       script = setup.generate_setup_script()
-       
-       assert "#!/bin/bash" in script
-       assert "apt-get install nginx" in script
-       assert "wget https://github.com/fatedier/frp" in script
-       assert "systemctl enable frps" in script
-   ```
+## 배포 스크립트
 
-## 구현 상세
-
-### Nginx 설정 템플릿
-```python
-NGINX_SERVER_TEMPLATE = """
-server {{
-    listen 80;
-    listen [::]:80;
-    server_name {domain};
-    
-    # Redirect HTTP to HTTPS
-    return 301 https://$server_name$request_uri;
-}}
-
-server {{
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name {domain};
-    
-    # SSL Configuration
-    ssl_certificate {ssl_cert};
-    ssl_certificate_key {ssl_key};
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
-    
-    # Security Headers
-    add_header Strict-Transport-Security "max-age=31536000" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    
-    # Logging
-    access_log /var/log/nginx/{domain}_access.log;
-    error_log /var/log/nginx/{domain}_error.log;
-    
-    # Path-based routing
-    {locations}
-}}
-"""
-
-NGINX_LOCATION_TEMPLATE = """
-    location ~ ^/{path}/(.*) {{
-        # Rate limiting (optional)
-        {rate_limit}
-        
-        # Proxy settings
-        proxy_pass http://127.0.0.1:{frp_port};
-        proxy_http_version 1.1;
-        
-        # Headers
-        proxy_set_header Host {vhost};
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header X-Original-URI $request_uri;
-        proxy_set_header X-Forwarded-Path /{path};
-        
-        # WebSocket support
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
-        
-        # Timeouts
-        proxy_connect_timeout 600;
-        proxy_send_timeout 600;
-        proxy_read_timeout 600;
-        
-        # Custom headers
-        {custom_headers}
-    }}
-"""
-```
-
-### 설치 스크립트 템플릿
+### 자동 설치 스크립트
 ```bash
 #!/bin/bash
+# install-frp-server.sh
+
 set -e
 
-# 색상 정의
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+DOMAIN=${1:-"tunnel.example.com"}
+EMAIL=${2:-"admin@example.com"}
+FRP_VERSION=${3:-"0.52.3"}
 
-echo -e "${GREEN}FRP Server Setup Script${NC}"
-echo "Domain: {domain}"
-echo ""
+echo "Installing FRP Server for domain: $DOMAIN"
 
-# 1. 시스템 업데이트
-echo -e "${YELLOW}Updating system packages...${NC}"
-apt-get update && apt-get upgrade -y
-
-# 2. Nginx 설치
-echo -e "${YELLOW}Installing Nginx...${NC}"
-apt-get install -y nginx certbot python3-certbot-nginx
-
-# 3. FRP 다운로드 및 설치
-echo -e "${YELLOW}Installing FRP...${NC}"
-FRP_VERSION="0.51.0"
+# 1. FRP 바이너리 다운로드
 wget https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz
 tar -xzf frp_${FRP_VERSION}_linux_amd64.tar.gz
-cp frp_${FRP_VERSION}_linux_amd64/frps /usr/local/bin/
-chmod +x /usr/local/bin/frps
+sudo mv frp_${FRP_VERSION}_linux_amd64/frps /usr/local/bin/
+sudo chmod +x /usr/local/bin/frps
 
-# 4. 설정 파일 복사
-echo -e "${YELLOW}Copying configuration files...${NC}"
-cp nginx.conf /etc/nginx/sites-available/{domain}
-ln -sf /etc/nginx/sites-available/{domain} /etc/nginx/sites-enabled/
-cp frps.ini /etc/frp/frps.ini
+# 2. 설정 디렉토리 생성
+sudo mkdir -p /etc/frp
+sudo mkdir -p /var/log/frp
 
-# 5. Systemd 서비스 설정
-echo -e "${YELLOW}Setting up systemd services...${NC}"
-cp frps.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable frps
-systemctl start frps
+# 3. Systemd 서비스 설정
+sudo tee /etc/systemd/system/frps.service > /dev/null <<EOF
+[Unit]
+Description=FRP Server
+After=network.target
 
-# 6. SSL 인증서 설정
-echo -e "${YELLOW}Setting up SSL certificate...${NC}"
-certbot --nginx -d {domain} --non-interactive --agree-tos -m {email}
+[Service]
+Type=simple
+User=frp
+Group=frp
+ExecStart=/usr/local/bin/frps -c /etc/frp/frps.toml
+Restart=on-failure
+RestartSec=5s
 
-# 7. 방화벽 설정
-echo -e "${YELLOW}Configuring firewall...${NC}"
-ufw allow 80/tcp
-ufw allow 443/tcp
-ufw allow 7000/tcp
-ufw allow 7500/tcp
+[Install]
+WantedBy=multi-user.target
+EOF
 
-# 8. 서비스 시작
-echo -e "${YELLOW}Starting services...${NC}"
-nginx -t && systemctl reload nginx
+# 4. 사용자 생성
+sudo useradd -r -s /bin/false frp || true
+sudo chown -R frp:frp /etc/frp /var/log/frp
 
-echo -e "${GREEN}Setup completed successfully!${NC}"
+# 5. SSL 인증서 설정 (Let's Encrypt)
+sudo apt-get update
+sudo apt-get install -y certbot
+
+# 6. 방화벽 설정
+sudo ufw allow 7000/tcp  # FRP control port
+sudo ufw allow 80/tcp    # HTTP
+sudo ufw allow 443/tcp   # HTTPS
+
+echo "FRP Server installation completed!"
+echo "Edit /etc/frp/frps.toml and run: sudo systemctl start frps"
 ```
 
 ## 파일 구조
 ```
-server_setup/
-├── nginx_config.py     # Nginx 설정 생성기
-├── frp_config.py       # FRP 서버 설정
-├── server_setup.py     # 통합 설정 도구
-├── server_manager.py   # 서버 관리 도구
-├── templates/
-│   ├── nginx.conf.j2
-│   ├── frps.ini.j2
-│   └── setup.sh.j2
-├── scripts/
-│   ├── install.sh
-│   ├── upgrade.sh
-│   └── uninstall.sh
-└── README.md
+frp_wrapper/
+├── server/
+│   ├── config_builder.py   # FRP 서버 설정 생성기
+│   ├── ssl_manager.py      # SSL 인증서 관리
+│   ├── server_manager.py   # 서버 관리
+│   └── installer.py        # 설치 도구
+
+scripts/
+├── install-frp-server.sh   # 자동 설치 스크립트
+├── setup-ssl.sh           # SSL 설정 스크립트
+└── frps.toml.template     # 서버 설정 템플릿
 
 tests/
-├── test_nginx_config.py
-├── test_frp_config.py
-├── test_server_setup.py
-└── test_templates.py
+├── test_server_config.py
+├── test_ssl_manager.py
+└── test_server_manager.py
 ```
 
 ## 완료 기준
 
 ### 필수 기능
-- [x] Nginx 설정 생성기
-- [x] FRP 서버 설정 관리
-- [x] SSL 통합
-- [x] 설치 스크립트
-- [x] Systemd 서비스
+- [ ] FRP 서버 설정 생성기
+- [ ] SSL 인증서 관리
+- [ ] 서버 프로세스 관리
+- [ ] 자동 설치 스크립트
 
 ### 테스트
-- [x] 설정 파일 생성 테스트
-- [x] 템플릿 렌더링 테스트
-- [x] 스크립트 검증
-- [x] 통합 설정 테스트
+- [ ] 설정 생성 테스트
+- [ ] SSL 관리 테스트
+- [ ] 서버 관리 테스트
+- [ ] 통합 테스트
 
 ### 문서
-- [x] 서버 설정 가이드
-- [x] 보안 권장사항
-- [x] 문제 해결 가이드
+- [ ] 서버 설정 가이드
+- [ ] SSL 설정 가이드
+- [ ] 배포 가이드
 
 ## 예상 작업 시간
-- Nginx 설정 생성기: 4시간
-- FRP 서버 설정: 3시간
-- 설치 스크립트: 3시간
-- 테스트 작성: 4시간
+- FRP 서버 설정 생성기: 3시간
+- SSL 관리: 2시간
+- 서버 관리자: 3시간
+- 배포 스크립트: 2시간
+- 테스트 작성: 3시간
 - 문서화: 2시간
 
-**총 예상 시간**: 16시간 (3일)
+**총 예상 시간**: 15시간 (3.75일)
 
 ## 다음 단계 준비
-- 모니터링 시스템
-- 로깅 통합
-- 메트릭 수집
+- 모니터링 시스템 연동
+- 로그 관리 개선
+- 백업 및 복구 기능
 
 ## 의존성
-- Nginx
-- Let's Encrypt
-- systemd
-- Python 3.8+
+- Checkpoint 1-5 완료
+- FRP 서버 설정 이해
+- SSL/TLS 인증서 지식
+- Linux 시스템 관리
 
 ## 주의사항
-- 보안 설정 확인
-- SSL 인증서 자동 갱신
-- 방화벽 규칙 검증
-- 백업 전략
+- 보안 설정 철저히 (방화벽, 인증서)
+- 서버 재시작 시 자동 복구
+- 로그 로테이션 설정
+- 모니터링 시스템 연동
