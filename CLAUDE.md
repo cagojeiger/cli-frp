@@ -14,15 +14,12 @@ FRP Python Wrapper is a self-hostable tunneling solution (like ngrok) that lever
 
 ### Setting up the environment
 ```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# This project uses uv for dependency management
+# Install all dependencies including dev and test extras
+uv sync --all-extras
 
-# Install dependencies (once pyproject.toml is created)
-pip install -e ".[dev]"
-
-# Install pre-commit hooks (once configured)
-pre-commit install
+# Install pre-commit hooks
+uv run pre-commit install
 
 # Install FRP binary (required external dependency)
 # Download from: https://github.com/fatedier/frp/releases
@@ -30,62 +27,73 @@ pre-commit install
 
 ### Running tests (TDD Approach)
 ```bash
-# Run all tests
-pytest
-
-# Run tests with coverage (must maintain 95%+ coverage)
-pytest --cov=src --cov-report=term-missing --cov-fail-under=95
-
-# Run specific test file
-pytest tests/test_client.py
+# Run all tests with coverage (configured in pyproject.toml)
+uv run pytest
 
 # Run tests in watch mode for TDD
-pytest-watch
+uv run pytest-watch
+
+# Run specific test file
+uv run pytest tests/test_process.py
 
 # Run tests with verbose output
-pytest -v
+uv run pytest -v
+
+# Run specific test method
+uv run pytest tests/test_process.py::test_process_manager_start -v
+
+# Check coverage report
+uv run pytest --cov=src/frp_wrapper --cov-report=html
+open htmlcov/index.html  # View coverage report
 ```
 
 ### Linting and type checking
 ```bash
-# Type checking (required)
-mypy src/
+# Type checking with mypy (strict mode)
+uv run mypy src/
 
-# Linting (required)
-ruff check src/
+# Linting with ruff
+uv run ruff check src/
 
-# Auto-formatting
-ruff format src/
+# Auto-formatting with ruff
+uv run ruff format src/
+
+# Run all pre-commit hooks
+uv run pre-commit run --all-files
 ```
 
 ### Building and packaging
 ```bash
 # Build package
-python -m build
+uv build
 
-# Upload to PyPI
-python -m twine upload dist/*
+# For PyPI upload (when ready)
+uv run twine upload dist/*
 ```
 
 ## Architecture Overview
 
-### Simple Module Structure
+### Current Module Structure
 ```
 src/frp_wrapper/
-├── __init__.py     # Public API exports
-├── client.py       # Main FRPClient class
-├── tunnel.py       # Tunnel management classes
-├── process.py      # FRP process handling
-├── config.py       # Configuration builder
-├── exceptions.py   # Custom exceptions
-└── utils.py        # Helper functions
+├── __init__.py        # Public API exports
+├── exceptions.py      # Custom exception hierarchy
+├── logging.py         # Structured logging setup (structlog)
+└── process.py         # ProcessManager - FRP binary lifecycle (implemented)
 
 tests/
-├── test_client.py
-├── test_tunnel.py
-├── test_process.py
-├── test_config.py
-└── test_integration.py
+├── __init__.py
+├── conftest.py        # Pytest fixtures and configuration
+└── test_process.py    # ProcessManager tests (100% coverage)
+```
+
+### Planned Module Structure
+```
+src/frp_wrapper/
+├── client.py          # Main FRPClient class
+├── tunnel.py          # Tunnel management classes
+├── config.py          # Configuration builder
+└── utils.py           # Helper functions
 ```
 
 ### Key Design Principles
@@ -112,38 +120,16 @@ tests/
    # Automatic cleanup
    ```
 
-4. **Test-Driven Development**: All code written with comprehensive test coverage
-
-### Directory Structure
-```
-src/
-└── frp_wrapper/
-    ├── __init__.py      # Main API exports
-    ├── client.py        # FRPClient class
-    ├── tunnel.py        # Tunnel classes (HTTPTunnel, TCPTunnel)
-    ├── process.py       # ProcessManager class
-    ├── config.py        # ConfigBuilder class
-    ├── exceptions.py    # Custom exceptions
-    └── utils.py         # Helper functions
-
-tests/
-├── __init__.py
-├── test_client.py
-├── test_tunnel.py
-├── test_process.py
-├── test_config.py
-├── test_utils.py
-└── test_integration.py
-```
+4. **Test-Driven Development**: All code written with comprehensive test coverage (95%+ required)
 
 ## Core Concepts
 
 ### Main Classes
-- **FRPClient**: Main client for connecting to FRP server
-- **HTTPTunnel**: HTTP tunnel with path-based routing
-- **TCPTunnel**: Simple TCP port forwarding
-- **ProcessManager**: Manages FRP binary process
-- **ConfigBuilder**: Generates FRP configuration files
+- **ProcessManager** (Implemented): Manages FRP binary process lifecycle with health checks
+- **FRPClient** (Planned): Main client for connecting to FRP server
+- **HTTPTunnel** (Planned): HTTP tunnel with path-based routing
+- **TCPTunnel** (Planned): Simple TCP port forwarding
+- **ConfigBuilder** (Planned): Generates FRP configuration files
 
 ### Path-Based Routing Mechanism
 Uses FRP's native `locations` feature for clean URL routing:
@@ -175,43 +161,49 @@ locations = ["/myapp"]  # Native path routing!
 
 ### Testing Strategy
 1. **Unit Tests**: Test individual classes and methods
-2. **Integration Tests**: Test FRP binary interaction
+2. **Integration Tests**: Test FRP binary interaction (mark with `@pytest.mark.integration`)
 3. **Property Tests**: Test with varied inputs using Hypothesis
 4. **End-to-End Tests**: Full tunnel creation and usage
 
-### Example TDD Workflow
-```python
-# 1. Write failing test
-def test_client_connection():
-    client = FRPClient("test.example.com")
-    assert not client.is_connected()
+### Current Test Coverage Requirements
+- Minimum 95% coverage enforced in pyproject.toml
+- Coverage reports generated automatically
+- HTML coverage reports for detailed analysis
 
-    client.connect()
-    assert client.is_connected()
+## Important Configuration Details
 
-# 2. Implement minimal code
-class FRPClient:
-    def __init__(self, server):
-        self.server = server
-        self._connected = False
+### Logging (structlog)
+- Structured JSON logging configured
+- File output to `frp_wrapper.log`
+- Configurable via environment variables
 
-    def is_connected(self):
-        return self._connected
+### Type Checking (mypy)
+- Strict mode enabled
+- All code must be fully typed
+- No implicit Any types allowed
 
-    def connect(self):
-        # Minimal implementation
-        self._connected = True
+### Code Style (ruff)
+- Line length: 88 characters
+- Target Python 3.11+
+- Comprehensive rule set (E, W, F, I, B, C4, UP, ARG, PL)
 
-# 3. Refactor and add real functionality
-```
+### Pre-commit Hooks
+- Automatic code formatting
+- Type checking
+- YAML/TOML validation
+- Trailing whitespace removal
 
-## Important Notes
+## Development Status
 
-1. **TDD is Required**: All code must be written test-first with high coverage
-2. **Simple Over Complex**: Prefer clear, simple solutions over clever abstractions
-3. **Python Conventions**: Follow PEP 8, use type hints, clear naming
-4. **FRP Integration**: Direct use of FRP's native features, no unnecessary abstraction
-5. **Error Handling**: Use standard Python exceptions with clear messages
+**Current Phase**: Implementation Phase (Checkpoint 1 of 8)
+- ✅ Project setup complete (uv, pre-commit, structlog)
+- ✅ ProcessManager implemented with full test coverage
+- 🚧 Working towards Checkpoint 2 (Basic FRP Client)
+
+**Roadmap Overview** (5 weeks total):
+- Phase 1 (Weeks 1-2): Basic implementation
+- Phase 2 (Weeks 3-4): Core features
+- Phase 3 (Week 5): Production ready
 
 ## Common Tasks
 
@@ -222,35 +214,31 @@ class FRPClient:
 4. Update documentation and examples
 5. Ensure 95%+ test coverage
 
-### Working with FRP Configuration
-- Use FRP's native TOML configuration format
-- Leverage `locations` parameter for path routing
-- Test with actual FRP binary when possible
+### Working with ProcessManager
+```python
+from frp_wrapper.process import ProcessManager
 
-### Running TDD Development
-```bash
-# Start TDD session
-pytest-watch --clear --verbose
+# Basic usage
+manager = ProcessManager("/path/to/frpc", config_path="/path/to/config.toml")
+manager.start()
+if manager.is_running():
+    print("FRP is running!")
+manager.stop()
 
-# In another terminal, edit tests and code
-# Tests will run automatically on file changes
+# With context manager
+with ProcessManager("/path/to/frpc", config_path="/path/to/config.toml") as manager:
+    # Process runs here
+    pass
+# Automatically stopped
 ```
 
-## Common Commands for TDD Development
-
+### Running Continuous Testing (TDD)
 ```bash
-# Install in development mode with test dependencies
-pip install -e ".[dev,test]"
+# In one terminal
+uv run pytest-watch --clear --verbose
 
-# Run tests continuously during development
-pytest-watch
-
-# Run specific test method
-pytest tests/test_client.py::test_client_connection -v
-
-# Check test coverage
-pytest --cov=src --cov-report=html
-open htmlcov/index.html  # View coverage report
+# In another terminal, edit code
+# Tests run automatically on save
 ```
 
 ## Key Testing Patterns
@@ -258,33 +246,34 @@ open htmlcov/index.html  # View coverage report
 ### Unit Test Example
 ```python
 import pytest
-from frp_wrapper import FRPClient
-from frp_wrapper.exceptions import ConnectionError
+from frp_wrapper.process import ProcessManager
+from frp_wrapper.exceptions import ProcessError
 
-def test_client_requires_server():
-    with pytest.raises(ValueError):
-        FRPClient("")  # Empty server should raise
+def test_process_manager_requires_binary():
+    with pytest.raises(ValueError, match="binary_path is required"):
+        ProcessManager("")
 
-def test_client_connection_success():
-    client = FRPClient("example.com")
-    # Mock successful connection
-    assert client.connect() == True
-
-def test_client_connection_failure():
-    client = FRPClient("invalid.server")
-    with pytest.raises(ConnectionError):
-        client.connect()
+def test_process_manager_start_stop(tmp_path, mock_subprocess):
+    manager = ProcessManager("/usr/bin/frpc", config_path=str(tmp_path / "config.toml"))
+    manager.start()
+    assert manager.is_running()
+    manager.stop()
+    assert not manager.is_running()
 ```
 
-### Integration Test Example
+### Fixture Usage
 ```python
-@pytest.mark.integration
-def test_real_tunnel_creation():
-    # Requires actual FRP server for testing
-    with FRPClient("test.server.com") as client:
-        tunnel = client.expose_path(3000, "test")
-        assert tunnel.url.startswith("https://")
-        assert "test" in tunnel.url
+# From conftest.py
+@pytest.fixture
+def mock_subprocess(monkeypatch):
+    """Mock subprocess.Popen for testing."""
+    # Use this fixture to test process management without real processes
 ```
 
-This approach maintains the core innovative ideas (FRP locations, path routing) while making the codebase much more approachable and maintainable for Python developers, with TDD as a strong foundation.
+## Environment-Specific Notes
+
+- Project uses Python 3.11+ features
+- All dependencies managed by `uv` (not pip/poetry)
+- Structured logging with structlog (JSON format)
+- Comprehensive pre-commit hooks for code quality
+- FRP binary must be downloaded separately (not bundled)
