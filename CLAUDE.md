@@ -42,6 +42,9 @@ uv run pytest -v
 # Run specific test method
 uv run pytest tests/test_process.py::test_process_manager_start -v
 
+# Run tests excluding integration tests
+uv run pytest -m "not integration"
+
 # Check coverage report
 uv run pytest --cov=src/frp_wrapper --cov-report=html
 open htmlcov/index.html  # View coverage report
@@ -76,23 +79,27 @@ uv run twine upload dist/*
 ### Current Module Structure
 ```
 src/frp_wrapper/
-├── __init__.py        # Public API exports
+├── __init__.py        # Public API exports (FRPClient, ConfigBuilder)
 ├── exceptions.py      # Custom exception hierarchy
 ├── logging.py         # Structured logging setup (structlog)
-└── process.py         # ProcessManager - FRP binary lifecycle (implemented)
+├── process.py         # ProcessManager - FRP binary lifecycle (implemented)
+├── client.py          # FRPClient - Main client class (implemented)
+└── config.py          # ConfigBuilder - Configuration generator (implemented)
 
 tests/
 ├── __init__.py
 ├── conftest.py        # Pytest fixtures and configuration
-└── test_process.py    # ProcessManager tests (100% coverage)
+├── test_process.py    # ProcessManager tests
+├── test_client.py     # FRPClient tests
+├── test_config.py     # ConfigBuilder tests
+└── test_*.py          # Other test modules
 ```
 
 ### Planned Module Structure
 ```
 src/frp_wrapper/
-├── client.py          # Main FRPClient class
-├── tunnel.py          # Tunnel management classes
-├── config.py          # Configuration builder
+├── tunnel.py          # Tunnel management classes (HTTPTunnel, TCPTunnel)
+├── server.py          # Server management tools
 └── utils.py           # Helper functions
 ```
 
@@ -100,23 +107,28 @@ src/frp_wrapper/
 
 1. **Simple Class-Based Design**: Intuitive object-oriented API
    ```python
-   # Main usage pattern
+   # Current usage pattern
+   from frp_wrapper import FRPClient
+
    client = FRPClient("example.com", auth_token="secret")
    client.connect()
 
-   tunnel = client.expose_path(3000, "myapp")
-   print(f"URL: {tunnel.url}")  # https://example.com/myapp/
+   # Future: tunnel = client.expose_path(3000, "myapp")
+   # Future: print(f"URL: {tunnel.url}")  # https://example.com/myapp/
 
-   client.close()
+   client.disconnect()
    ```
 
 2. **Standard Python Exception Handling**: Clear error messages and proper exception hierarchy
 
 3. **Context Manager Support**: Automatic resource cleanup
    ```python
+   from frp_wrapper import FRPClient
+
    with FRPClient("example.com") as client:
-       with client.tunnel(3000, "myapp") as tunnel:
-           print(f"URL: {tunnel.url}")
+       # Future: with client.tunnel(3000, "myapp") as tunnel:
+       #     print(f"URL: {tunnel.url}")
+       pass
    # Automatic cleanup
    ```
 
@@ -125,11 +137,11 @@ src/frp_wrapper/
 ## Core Concepts
 
 ### Main Classes
-- **ProcessManager** (Implemented): Manages FRP binary process lifecycle with health checks
-- **FRPClient** (Planned): Main client for connecting to FRP server
-- **HTTPTunnel** (Planned): HTTP tunnel with path-based routing
-- **TCPTunnel** (Planned): Simple TCP port forwarding
-- **ConfigBuilder** (Planned): Generates FRP configuration files
+- **ProcessManager** (✅ Implemented): Manages FRP binary process lifecycle with health checks
+- **FRPClient** (✅ Implemented): Main client for connecting to FRP server
+- **ConfigBuilder** (✅ Implemented): Generates FRP TOML configuration files
+- **HTTPTunnel** (🚧 Planned): HTTP tunnel with path-based routing
+- **TCPTunnel** (🚧 Planned): Simple TCP port forwarding
 
 ### Path-Based Routing Mechanism
 Uses FRP's native `locations` feature for clean URL routing:
@@ -181,11 +193,13 @@ locations = ["/myapp"]  # Native path routing!
 - Strict mode enabled
 - All code must be fully typed
 - No implicit Any types allowed
+- Python 3.11+ union types (X | None) preferred over Optional[X]
 
 ### Code Style (ruff)
 - Line length: 88 characters
 - Target Python 3.11+
 - Comprehensive rule set (E, W, F, I, B, C4, UP, ARG, PL)
+- Magic numbers (65535 for ports) are acceptable
 
 ### Pre-commit Hooks
 - Automatic code formatting
@@ -195,10 +209,11 @@ locations = ["/myapp"]  # Native path routing!
 
 ## Development Status
 
-**Current Phase**: Implementation Phase (Checkpoint 1 of 8)
+**Current Phase**: Implementation Phase (Checkpoint 2 of 8 completed)
 - ✅ Project setup complete (uv, pre-commit, structlog)
 - ✅ ProcessManager implemented with full test coverage
-- 🚧 Working towards Checkpoint 2 (Basic FRP Client)
+- ✅ FRPClient and ConfigBuilder implemented
+- 🚧 Working towards Checkpoint 3 (Tunnel Management)
 
 **Roadmap Overview** (5 weeks total):
 - Phase 1 (Weeks 1-2): Basic implementation
@@ -214,22 +229,33 @@ locations = ["/myapp"]  # Native path routing!
 4. Update documentation and examples
 5. Ensure 95%+ test coverage
 
-### Working with ProcessManager
+### Working with FRPClient
 ```python
-from frp_wrapper.process import ProcessManager
+from frp_wrapper import FRPClient
 
 # Basic usage
-manager = ProcessManager("/path/to/frpc", config_path="/path/to/config.toml")
-manager.start()
-if manager.is_running():
-    print("FRP is running!")
-manager.stop()
+client = FRPClient("example.com", port=7000, auth_token="secret")
+if client.connect():
+    print("Connected to FRP server!")
+    # Do work...
+    client.disconnect()
 
 # With context manager
-with ProcessManager("/path/to/frpc", config_path="/path/to/config.toml") as manager:
-    # Process runs here
-    pass
-# Automatically stopped
+with FRPClient("example.com", auth_token="secret") as client:
+    print("Connected!")
+    # Automatic disconnect on exit
+```
+
+### Working with ConfigBuilder
+```python
+from frp_wrapper import ConfigBuilder
+
+# Build FRP configuration
+with ConfigBuilder() as builder:
+    builder.add_server("example.com", port=7000, token="secret")
+    config_path = builder.build()
+    # Use config_path with ProcessManager
+# Automatic cleanup of temp file
 ```
 
 ### Running Continuous Testing (TDD)
@@ -246,34 +272,39 @@ uv run pytest-watch --clear --verbose
 ### Unit Test Example
 ```python
 import pytest
-from frp_wrapper.process import ProcessManager
-from frp_wrapper.exceptions import ProcessError
+from frp_wrapper import FRPClient
+from frp_wrapper.exceptions import ConnectionError
 
-def test_process_manager_requires_binary():
-    with pytest.raises(ValueError, match="binary_path is required"):
-        ProcessManager("")
+def test_client_requires_server():
+    with pytest.raises(ValueError, match="Server address cannot be empty"):
+        FRPClient("")
 
-def test_process_manager_start_stop(tmp_path, mock_subprocess):
-    manager = ProcessManager("/usr/bin/frpc", config_path=str(tmp_path / "config.toml"))
-    manager.start()
-    assert manager.is_running()
-    manager.stop()
-    assert not manager.is_running()
+def test_client_context_manager(mock_process_manager):
+    with FRPClient("example.com") as client:
+        assert client.is_connected()
+    assert not client.is_connected()
 ```
 
-### Fixture Usage
+### Mock Patterns
 ```python
-# From conftest.py
-@pytest.fixture
-def mock_subprocess(monkeypatch):
-    """Mock subprocess.Popen for testing."""
-    # Use this fixture to test process management without real processes
+# Mock ProcessManager for client tests
+@patch('frp_wrapper.client.ProcessManager')
+def test_client_connection(mock_process_manager):
+    mock_process = Mock()
+    mock_process_manager.return_value = mock_process
+    mock_process.start.return_value = True
+    mock_process.wait_for_startup.return_value = True
+    mock_process.is_running.return_value = True  # Important for is_connected()
+
+    client = FRPClient("example.com")
+    assert client.connect()
 ```
 
 ## Environment-Specific Notes
 
-- Project uses Python 3.11+ features
+- Project uses Python 3.11+ features (union types, match statements)
 - All dependencies managed by `uv` (not pip/poetry)
 - Structured logging with structlog (JSON format)
 - Comprehensive pre-commit hooks for code quality
 - FRP binary must be downloaded separately (not bundled)
+- Integration tests require FRP binary or use mocked processes
