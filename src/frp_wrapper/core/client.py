@@ -6,6 +6,8 @@ import uuid
 from types import TracebackType
 from typing import TYPE_CHECKING, Any, Literal
 
+from ..common.context import ContextManagerMixin
+from ..common.context_config import ContextConfig
 from ..common.exceptions import (
     AuthenticationError,
     BinaryNotFoundError,
@@ -18,8 +20,6 @@ from ..common.utils import (
     validate_non_empty_string,
     validate_port,
 )
-from ..common.context_config import ContextConfig
-from ..common.context import ContextManagerMixin
 from ..tunnels.models import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
 from .config import ConfigBuilder
 from .process import ProcessManager
@@ -55,7 +55,7 @@ class FRPClient(ContextManagerMixin):
             BinaryNotFoundError: If frpc binary cannot be found
         """
         super().__init__(context_config=context_config)
-        
+
         self.server = validate_non_empty_string(server, "Server address")
         validate_port(port, "Server port")
 

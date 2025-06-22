@@ -1,10 +1,12 @@
+from unittest.mock import Mock
+
 import pytest
-from unittest.mock import Mock, patch
 
 from frp_wrapper.common.context_config import TunnelGroupConfig
 from frp_wrapper.common.exceptions import TunnelError
 from frp_wrapper.tunnels.group import TunnelGroup, tunnel_group
 from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel
+
 
 class TestTunnelGroup:
     @pytest.fixture
@@ -96,15 +98,18 @@ class TestTunnelGroup:
         mock_client.expose_path.return_value = Mock(tunnel_id="http1")
         mock_client.expose_tcp.return_value = Mock(tunnel_id="tcp1")
 
-        result = (group
-                  .add_http_tunnel(3000, "app1")
-                  .add_tcp_tunnel(3001)
-                  .add_http_tunnel(3002, "app2"))
+        result = (
+            group.add_http_tunnel(3000, "app1")
+            .add_tcp_tunnel(3001)
+            .add_http_tunnel(3002, "app2")
+        )
 
         assert result == group
         assert len(group.tunnels) == 3
 
-    def test_tunnel_group_start_all(self, mock_client, mock_http_tunnel, mock_tcp_tunnel):
+    def test_tunnel_group_start_all(
+        self, mock_client, mock_http_tunnel, mock_tcp_tunnel
+    ):
         """Test starting all tunnels in group"""
         group = TunnelGroup(mock_client)
         group.tunnels = [mock_http_tunnel, mock_tcp_tunnel]
@@ -137,7 +142,7 @@ class TestTunnelGroup:
         tunnel1 = Mock(tunnel_id="tunnel1", manager=Mock())
         tunnel2 = Mock(tunnel_id="tunnel2", manager=Mock())
         tunnel3 = Mock(tunnel_id="tunnel3", manager=Mock())
-        
+
         group.tunnels = [tunnel1, tunnel2, tunnel3]
 
         result = group.stop_all()
@@ -154,7 +159,7 @@ class TestTunnelGroup:
 
         tunnel1 = Mock(tunnel_id="tunnel1", manager=Mock())
         tunnel2 = Mock(tunnel_id="tunnel2", manager=Mock())
-        
+
         group.tunnels = [tunnel1, tunnel2]
 
         result = group.stop_all()
@@ -172,7 +177,9 @@ class TestTunnelGroup:
         group.tunnels = [mock_tunnel]
 
         group._resource_tracker.register_resource(
-            mock_tunnel.tunnel_id, mock_tunnel, lambda: group._cleanup_tunnel(mock_tunnel)
+            mock_tunnel.tunnel_id,
+            mock_tunnel,
+            lambda: group._cleanup_tunnel(mock_tunnel),
         )
 
         with group as ctx:
@@ -187,9 +194,11 @@ class TestTunnelGroup:
 
         mock_tunnel = Mock(tunnel_id="test-tunnel", manager=Mock())
         mock_tunnel.manager.stop_tunnel.side_effect = Exception("Cleanup failed")
-        
+
         group._resource_tracker.register_resource(
-            mock_tunnel.tunnel_id, mock_tunnel, lambda: group._cleanup_tunnel(mock_tunnel)
+            mock_tunnel.tunnel_id,
+            mock_tunnel,
+            lambda: group._cleanup_tunnel(mock_tunnel),
         )
 
         with group:
@@ -198,7 +207,7 @@ class TestTunnelGroup:
     def test_tunnel_group_len_and_iter(self, mock_client):
         """Test TunnelGroup __len__ and __iter__"""
         group = TunnelGroup(mock_client)
-        
+
         tunnel1 = Mock()
         tunnel2 = Mock()
         group.tunnels = [tunnel1, tunnel2]
@@ -209,7 +218,7 @@ class TestTunnelGroup:
     def test_cleanup_tunnel_method(self, mock_client):
         """Test _cleanup_tunnel method"""
         group = TunnelGroup(mock_client)
-        
+
         mock_tunnel = Mock()
         mock_tunnel.tunnel_id = "test-tunnel"
         mock_tunnel.manager = Mock()
@@ -222,7 +231,7 @@ class TestTunnelGroup:
     def test_cleanup_tunnel_method_no_manager(self, mock_client):
         """Test _cleanup_tunnel method with no manager"""
         group = TunnelGroup(mock_client)
-        
+
         mock_tunnel = Mock()
         mock_tunnel.tunnel_id = "test-tunnel"
         del mock_tunnel.manager  # Remove manager attribute
@@ -232,7 +241,7 @@ class TestTunnelGroup:
     def test_cleanup_tunnel_method_with_exception(self, mock_client):
         """Test _cleanup_tunnel method with exception"""
         group = TunnelGroup(mock_client)
-        
+
         mock_tunnel = Mock()
         mock_tunnel.tunnel_id = "test-tunnel"
         mock_tunnel.manager = Mock()
@@ -240,11 +249,12 @@ class TestTunnelGroup:
 
         group._cleanup_tunnel(mock_tunnel)
 
+
 class TestTunnelGroupFunction:
     def test_tunnel_group_function(self):
         """Test tunnel_group convenience function"""
         mock_client = Mock()
-        
+
         with tunnel_group(mock_client, group_name="test", max_tunnels=5) as group:
             assert isinstance(group, TunnelGroup)
             assert group.config.group_name == "test"
@@ -253,7 +263,7 @@ class TestTunnelGroupFunction:
     def test_tunnel_group_function_with_defaults(self):
         """Test tunnel_group function with default values"""
         mock_client = Mock()
-        
+
         with tunnel_group(mock_client) as group:
             assert isinstance(group, TunnelGroup)
             assert group.config.group_name == "default"
