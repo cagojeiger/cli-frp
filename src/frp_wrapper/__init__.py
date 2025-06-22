@@ -22,9 +22,11 @@ from .common.utils import (
 # Core functionality
 from .core.client import FRPClient
 from .core.config import ConfigBuilder
+from . import core  # For test access to core.client, core.config, etc.
 
 # Tunnel management
 from .tunnels.manager import TunnelManager
+from . import tunnels  # For test access to tunnels.manager, etc.
 from .tunnels.models import (
     BaseTunnel,
     HTTPTunnel,
@@ -42,6 +44,11 @@ setup_logging(level="INFO")
 logger = get_logger(__name__)
 
 __version__ = "0.1.0"
+
+client = core.client
+config = core.config
+tunnel_manager = tunnels.manager
+tunnel_process = tunnels.process
 
 __all__ = [
     # High-level API
@@ -72,4 +79,10 @@ __all__ = [
     "validate_non_empty_string",
     "mask_sensitive_data",
     "sanitize_log_data",
+    "core",
+    "tunnels",
+    "client",
+    "config", 
+    "tunnel_manager",
+    "tunnel_process",
 ]

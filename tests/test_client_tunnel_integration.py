@@ -14,8 +14,8 @@ class TestFRPClientExposePathIntegration:
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
         with (
-            patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find,
-            patch("frp_wrapper.client.TunnelManager") as mock_tunnel_manager,
+            patch("frp_wrapper.core.client.FRPClient.find_frp_binary") as mock_find,
+            patch("frp_wrapper.tunnels.manager.TunnelManager") as mock_tunnel_manager,
         ):
             mock_find.return_value = "/usr/local/bin/frpc"
             mock_tunnel_manager.return_value = Mock(spec=TunnelManager)
@@ -205,8 +205,8 @@ class TestFRPClientExposeTCPIntegration:
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
         with (
-            patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find,
-            patch("frp_wrapper.client.TunnelManager") as mock_tunnel_manager,
+            patch("frp_wrapper.core.client.FRPClient.find_frp_binary") as mock_find,
+            patch("frp_wrapper.tunnels.manager.TunnelManager") as mock_tunnel_manager,
         ):
             mock_find.return_value = "/usr/local/bin/frpc"
             mock_tunnel_manager.return_value = Mock(spec=TunnelManager)
@@ -346,8 +346,8 @@ class TestFRPClientTunnelLifecycleIntegration:
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
         with (
-            patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find,
-            patch("frp_wrapper.client.TunnelManager") as mock_tunnel_manager,
+            patch("frp_wrapper.core.client.FRPClient.find_frp_binary") as mock_find,
+            patch("frp_wrapper.tunnels.manager.TunnelManager") as mock_tunnel_manager,
         ):
             mock_find.return_value = "/usr/local/bin/frpc"
             mock_tunnel_manager.return_value = Mock(spec=TunnelManager)

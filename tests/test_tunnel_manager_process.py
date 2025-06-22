@@ -200,7 +200,7 @@ class TestTunnelManagerProcessManagement:
         """Test exception handling in start_tunnel_process."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
-        with patch("frp_wrapper.tunnel_manager.ConfigBuilder") as mock_config_builder:
+        with patch("frp_wrapper.tunnels.process.ConfigBuilder") as mock_config_builder:
             # Setup ConfigBuilder to raise exception
             mock_config_builder.side_effect = Exception("Config error")
 
