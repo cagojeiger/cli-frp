@@ -2,8 +2,8 @@
 
 from unittest.mock import Mock, patch
 
-from frp_wrapper.tunnel import HTTPTunnel, TCPTunnel, TunnelConfig
-from frp_wrapper.tunnel_process import TunnelProcessManager
+from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel, TunnelConfig
+from frp_wrapper.tunnels.process import TunnelProcessManager
 
 
 class TestTunnelProcessManager:

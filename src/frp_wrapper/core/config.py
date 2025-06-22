@@ -5,7 +5,8 @@ import tempfile
 from types import TracebackType
 from typing import Any, Literal
 
-from .logging import get_logger
+from ..common.logging import get_logger
+from ..common.utils import MAX_PORT, MIN_PORT
 
 logger = get_logger(__name__)
 
@@ -42,8 +43,8 @@ class ConfigBuilder:
         if not addr or not addr.strip():
             raise ValueError("Server address cannot be empty")
 
-        if not (1 <= port <= 65535):
-            raise ValueError("Port must be between 1 and 65535")
+        if not (MIN_PORT <= port <= MAX_PORT):
+            raise ValueError(f"Port must be between {MIN_PORT} and {MAX_PORT}")
 
         self._server_addr = addr.strip()
         self._server_port = port

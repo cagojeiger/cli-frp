@@ -4,13 +4,13 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from frp_wrapper.tunnel import HTTPTunnel, TCPTunnel, TunnelConfig, TunnelStatus
-from frp_wrapper.tunnel_manager import (
+from frp_wrapper.tunnels.manager import (
     TunnelManager,
     TunnelManagerError,
     TunnelRegistry,
     TunnelRegistryError,
 )
+from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel, TunnelConfig, TunnelStatus
 
 
 class TestTunnelRegistryEdgeCases:

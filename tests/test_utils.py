@@ -2,7 +2,7 @@
 
 import pytest
 
-from frp_wrapper.utils import (
+from frp_wrapper.common.utils import (
     MAX_PORT,
     MIN_PORT,
     mask_sensitive_data,

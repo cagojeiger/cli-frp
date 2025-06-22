@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from frp_wrapper.tunnel import (
+from frp_wrapper.tunnels.models import (
     HTTPTunnel,
     TCPTunnel,
     TunnelConfig,
@@ -16,7 +16,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_creation(self):
         """Test TunnelRegistry can be created and initialized."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         assert registry is not None
@@ -24,7 +24,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_add_tunnel(self):
         """Test adding tunnels to the registry."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         tunnel = HTTPTunnel(id="test-http", local_port=3000, path="myapp")
@@ -37,7 +37,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_add_duplicate_id_raises_error(self):
         """Test that adding tunnel with duplicate ID raises error."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry, TunnelRegistryError
+        from frp_wrapper.tunnels.manager import TunnelRegistry, TunnelRegistryError
 
         registry = TunnelRegistry()
         tunnel1 = HTTPTunnel(id="duplicate", local_port=3000, path="app1")
@@ -50,7 +50,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_remove_tunnel(self):
         """Test removing tunnels from the registry."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         tunnel = TCPTunnel(id="test-tcp", local_port=3000)
@@ -64,7 +64,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_remove_nonexistent_tunnel_raises_error(self):
         """Test that removing non-existent tunnel raises error."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry, TunnelRegistryError
+        from frp_wrapper.tunnels.manager import TunnelRegistry, TunnelRegistryError
 
         registry = TunnelRegistry()
 
@@ -73,7 +73,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_get_tunnel(self):
         """Test getting tunnel by ID from registry."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         tunnel = HTTPTunnel(id="test-get", local_port=3000, path="myapp")
@@ -87,7 +87,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_get_nonexistent_tunnel_returns_none(self):
         """Test that getting non-existent tunnel returns None."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         tunnel = registry.get_tunnel("nonexistent")
@@ -96,7 +96,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_update_tunnel_status(self):
         """Test updating tunnel status in registry."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         tunnel = TCPTunnel(id="test-update", local_port=3000)
@@ -110,7 +110,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_update_nonexistent_tunnel_status_raises_error(self):
         """Test that updating status of non-existent tunnel raises error."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry, TunnelRegistryError
+        from frp_wrapper.tunnels.manager import TunnelRegistry, TunnelRegistryError
 
         registry = TunnelRegistry()
 
@@ -119,7 +119,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_list_tunnels_by_type(self):
         """Test listing tunnels filtered by type."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         http_tunnel = HTTPTunnel(id="http-1", local_port=3000, path="app1")
@@ -138,7 +138,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_list_tunnels_by_status(self):
         """Test listing tunnels filtered by status."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         tunnel1 = HTTPTunnel(id="pending", local_port=3000, path="app1")
@@ -158,7 +158,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_validate_port_conflicts(self):
         """Test validation of port conflicts in registry."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry, TunnelRegistryError
+        from frp_wrapper.tunnels.manager import TunnelRegistry, TunnelRegistryError
 
         registry = TunnelRegistry()
         tunnel1 = TCPTunnel(id="tcp-1", local_port=3000)
@@ -171,7 +171,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_validate_http_path_conflicts(self):
         """Test validation of HTTP path conflicts in registry."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry, TunnelRegistryError
+        from frp_wrapper.tunnels.manager import TunnelRegistry, TunnelRegistryError
 
         registry = TunnelRegistry()
         tunnel1 = HTTPTunnel(id="http-1", local_port=3000, path="myapp")
@@ -184,7 +184,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_clear_all_tunnels(self):
         """Test clearing all tunnels from registry."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         tunnel1 = HTTPTunnel(id="http-1", local_port=3000, path="app1")
@@ -199,7 +199,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_serialization(self):
         """Test registry serialization to dict."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         registry = TunnelRegistry()
         tunnel = HTTPTunnel(id="serialize-test", local_port=3000, path="myapp")
@@ -213,7 +213,7 @@ class TestTunnelRegistry:
 
     def test_tunnel_registry_deserialization(self):
         """Test registry deserialization from dict."""
-        from frp_wrapper.tunnel_manager import TunnelRegistry
+        from frp_wrapper.tunnels.manager import TunnelRegistry
 
         data = {
             "tunnels": [
@@ -242,7 +242,7 @@ class TestTunnelManager:
 
     def test_tunnel_manager_creation(self):
         """Test TunnelManager can be created and initialized."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
         manager = TunnelManager(config, frp_binary_path="/usr/bin/frpc")
@@ -252,7 +252,7 @@ class TestTunnelManager:
 
     def test_tunnel_manager_create_http_tunnel(self):
         """Test creating HTTP tunnel through manager."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(
             server_host="test.example.com", default_domain="example.com"
@@ -274,7 +274,7 @@ class TestTunnelManager:
 
     def test_tunnel_manager_create_tcp_tunnel(self):
         """Test creating TCP tunnel through manager."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
         manager = TunnelManager(config, frp_binary_path="/usr/bin/frpc")
@@ -291,11 +291,11 @@ class TestTunnelManager:
 
     def test_tunnel_manager_start_tunnel(self):
         """Test starting tunnel through manager."""
-        from frp_wrapper.tunnel import TunnelConfig
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
+        from frp_wrapper.tunnels.models import TunnelConfig
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.tunnels.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel(
@@ -315,10 +315,10 @@ class TestTunnelManager:
 
     def test_tunnel_manager_start_nonexistent_tunnel_raises_error(self):
         """Test that starting non-existent tunnel raises error."""
-        from frp_wrapper.tunnel_manager import TunnelManager, TunnelManagerError
+        from frp_wrapper.tunnels.manager import TunnelManager, TunnelManagerError
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.tunnels.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
 
@@ -327,10 +327,10 @@ class TestTunnelManager:
 
     def test_tunnel_manager_stop_tunnel(self):
         """Test stopping tunnel through manager."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.tunnels.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_tcp_tunnel(tunnel_id="stop-test", local_port=3000)
@@ -352,10 +352,10 @@ class TestTunnelManager:
 
     def test_tunnel_manager_remove_tunnel(self):
         """Test removing tunnel through manager."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.tunnels.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel(
@@ -370,10 +370,10 @@ class TestTunnelManager:
 
     def test_tunnel_manager_list_active_tunnels(self):
         """Test listing only active tunnels."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.tunnels.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel("active-1", 3000, "app1")
@@ -392,10 +392,10 @@ class TestTunnelManager:
 
     def test_tunnel_manager_get_tunnel_info(self):
         """Test getting detailed tunnel information."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.tunnels.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel(
@@ -415,10 +415,10 @@ class TestTunnelManager:
 
     def test_tunnel_manager_shutdown_all_tunnels(self):
         """Test shutting down all active tunnels."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.tunnels.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel("shutdown-1", 3000, "app1")
@@ -442,10 +442,10 @@ class TestTunnelManager:
 
     def test_tunnel_manager_integration_with_registry(self):
         """Test that manager properly integrates with registry."""
-        from frp_wrapper.tunnel_manager import TunnelManager
+        from frp_wrapper.tunnels.manager import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.tunnels.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
 

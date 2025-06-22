@@ -6,22 +6,22 @@ import uuid
 from types import TracebackType
 from typing import Any, Literal
 
-from .config import ConfigBuilder
-from .exceptions import (
+from ..common.exceptions import (
     AuthenticationError,
     BinaryNotFoundError,
     ConnectionError,
     ProcessError,
 )
-from .logging import get_logger
-from .process import ProcessManager
-from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
-from .tunnel_manager import TunnelManager
-from .utils import (
+from ..common.logging import get_logger
+from ..common.utils import (
     sanitize_log_data,
     validate_non_empty_string,
     validate_port,
 )
+from ..tunnels.manager import TunnelManager
+from ..tunnels.models import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
+from .config import ConfigBuilder
+from .process import ProcessManager
 
 logger = get_logger(__name__)
 

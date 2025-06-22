@@ -6,7 +6,7 @@ from pathlib import Path
 import structlog
 from structlog.testing import LogCapture
 
-from frp_wrapper.logging import get_logger, setup_logging
+from frp_wrapper.common.logging import get_logger, setup_logging
 
 
 class TestLogging:

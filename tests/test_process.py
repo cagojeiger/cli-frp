@@ -6,8 +6,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from frp_wrapper.exceptions import BinaryNotFoundError, ProcessError
-from frp_wrapper.process import ProcessManager
+from frp_wrapper.common.exceptions import BinaryNotFoundError, ProcessError
+from frp_wrapper.core.process import ProcessManager
 
 
 class TestProcessManager:

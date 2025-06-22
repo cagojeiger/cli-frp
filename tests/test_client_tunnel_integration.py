@@ -2,9 +2,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from frp_wrapper.client import FRPClient
-from frp_wrapper.tunnel import HTTPTunnel, TCPTunnel, TunnelStatus, TunnelType
-from frp_wrapper.tunnel_manager import TunnelManager, TunnelManagerError
+from frp_wrapper.core.client import FRPClient
+from frp_wrapper.tunnels.manager import TunnelManager, TunnelManagerError
+from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel, TunnelStatus, TunnelType
 
 
 class TestFRPClientExposePathIntegration:

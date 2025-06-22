@@ -3,8 +3,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from frp_wrapper.client import FRPClient
-from frp_wrapper.exceptions import BinaryNotFoundError, ConnectionError
+from frp_wrapper.common.exceptions import BinaryNotFoundError, ConnectionError
+from frp_wrapper.core.client import FRPClient
 
 
 @pytest.mark.integration

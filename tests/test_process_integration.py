@@ -6,7 +6,7 @@ import tempfile
 
 import pytest
 
-from frp_wrapper.process import ProcessManager
+from frp_wrapper.core.process import ProcessManager
 
 
 @pytest.mark.integration

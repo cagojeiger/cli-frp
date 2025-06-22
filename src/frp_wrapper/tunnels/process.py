@@ -3,12 +3,12 @@
 import logging
 from typing import TYPE_CHECKING
 
-from .config import ConfigBuilder
-from .process import ProcessManager
-from .tunnel import HTTPTunnel, TCPTunnel
+from ..core.config import ConfigBuilder
+from ..core.process import ProcessManager
+from .models import HTTPTunnel, TCPTunnel
 
 if TYPE_CHECKING:
-    from .tunnel import BaseTunnel, TunnelConfig
+    from .models import BaseTunnel, TunnelConfig
 
 logger = logging.getLogger(__name__)
 

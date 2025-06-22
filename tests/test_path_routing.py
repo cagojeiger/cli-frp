@@ -2,7 +2,7 @@
 
 import pytest
 
-from frp_wrapper.path_routing import (
+from frp_wrapper.tunnels.routing import (
     PathConflict,
     PathConflictDetector,
     PathConflictType,
@@ -234,8 +234,8 @@ class TestPathRoutingIntegration:
 
     def test_tunnel_manager_integration(self):
         """Test PathConflictDetector integration with TunnelManager"""
-        from frp_wrapper.tunnel import TunnelConfig
-        from frp_wrapper.tunnel_manager import TunnelManager, TunnelManagerError
+        from frp_wrapper.tunnels.manager import TunnelManager, TunnelManagerError
+        from frp_wrapper.tunnels.models import TunnelConfig
 
         config = TunnelConfig(
             server_host="test.example.com",
@@ -281,8 +281,8 @@ class TestPathRoutingIntegration:
 
     def test_path_validation_integration(self):
         """Test path validation integration with conflict detection"""
-        from frp_wrapper.tunnel import TunnelConfig
-        from frp_wrapper.tunnel_manager import TunnelManager, TunnelManagerError
+        from frp_wrapper.tunnels.manager import TunnelManager, TunnelManagerError
+        from frp_wrapper.tunnels.models import TunnelConfig
 
         config = TunnelConfig(server_host="test.example.com", auth_token="test_token")
 

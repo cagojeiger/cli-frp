@@ -6,8 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .path_routing import PathConflictDetector, PathValidator
-from .tunnel import (
+from .models import (
     BaseTunnel,
     HTTPTunnel,
     TCPTunnel,
@@ -15,7 +14,8 @@ from .tunnel import (
     TunnelStatus,
     TunnelType,
 )
-from .tunnel_process import TunnelProcessManager
+from .process import TunnelProcessManager
+from .routing import PathConflictDetector, PathValidator
 
 logger = logging.getLogger(__name__)
 

@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from frp_wrapper.config import ConfigBuilder
+from frp_wrapper.core.config import ConfigBuilder
 
 
 class TestConfigBuilder:
