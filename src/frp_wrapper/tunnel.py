@@ -2,9 +2,12 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+if TYPE_CHECKING:
+    from .tunnel_manager import TunnelManager
 
 
 class TunnelType(str, Enum):
@@ -26,7 +29,7 @@ class TunnelStatus(str, Enum):
 
 
 class BaseTunnel(BaseModel):
-    """Base tunnel model with immutable design pattern."""
+    """Base tunnel model with immutable design pattern and context manager support."""
 
     model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
@@ -41,6 +44,9 @@ class BaseTunnel(BaseModel):
     )
     connected_at: datetime | None = Field(
         default=None, description="Connection timestamp"
+    )
+    manager: "TunnelManager | None" = Field(
+        default=None, exclude=True, description="Associated tunnel manager"
     )
 
     def with_status(self, status: TunnelStatus) -> "BaseTunnel":
@@ -58,6 +64,62 @@ class BaseTunnel(BaseModel):
             update_data["connected_at"] = datetime.now()
 
         return self.model_copy(update=update_data)
+
+    def with_manager(self, manager: "TunnelManager") -> "BaseTunnel":
+        """Associate tunnel with a manager for context management.
+
+        Args:
+            manager: TunnelManager instance to associate with
+
+        Returns:
+            New tunnel instance with manager association
+        """
+        return self.model_copy(update={"manager": manager})
+
+    def __enter__(self) -> "BaseTunnel":
+        """Enter context manager - start the tunnel.
+
+        Returns:
+            Self for method chaining
+
+        Raises:
+            RuntimeError: If no manager is associated or tunnel start fails
+        """
+        if self.manager is None:
+            raise RuntimeError(
+                f"No manager associated with tunnel {self.id}. "
+                "Use tunnel.with_manager(manager) first."
+            )
+
+        success = self.manager.start_tunnel(self.id)
+        if not success:
+            raise RuntimeError(f"Failed to start tunnel {self.id}")
+
+        # Return updated tunnel instance from manager
+        updated_tunnel = self.manager.registry.get_tunnel(self.id)
+        if updated_tunnel is None:
+            raise RuntimeError(f"Tunnel {self.id} not found after start")
+
+        return updated_tunnel.with_manager(self.manager)
+
+    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
+        """Exit context manager - stop and remove the tunnel.
+
+        Args:
+            _exc_type: Exception type if an exception was raised
+            _exc_val: Exception value if an exception was raised
+            _exc_tb: Exception traceback if an exception was raised
+        """
+        if self.manager is not None:
+            try:
+                # Get current tunnel status from manager
+                current_tunnel = self.manager.registry.get_tunnel(self.id)
+                if current_tunnel and current_tunnel.status == TunnelStatus.CONNECTED:
+                    self.manager.stop_tunnel(self.id)
+                self.manager.remove_tunnel(self.id)
+            except Exception:
+                # Suppress exceptions during cleanup to avoid masking original exceptions
+                pass
 
 
 class TCPTunnel(BaseTunnel):
@@ -131,3 +193,28 @@ class HTTPTunnel(BaseTunnel):
 
         domain = self.custom_domains[0]
         return f"https://{domain}/{self.path}/"
+
+
+class TunnelConfig(BaseModel):
+    """Configuration for creating and managing tunnels."""
+
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    server_host: str = Field(min_length=1, description="FRP server hostname")
+    auth_token: str | None = Field(None, description="Authentication token")
+    default_domain: str | None = Field(
+        None, description="Default domain for HTTP tunnels"
+    )
+    max_tunnels: int = Field(
+        default=10, ge=1, le=100, description="Maximum concurrent tunnels"
+    )
+
+    @field_validator("server_host")
+    @classmethod
+    def validate_server_host(cls, v: str) -> str:
+        """Validate server hostname format."""
+        if not v.replace(".", "").replace("-", "").replace("_", "").isalnum():
+            raise ValueError(
+                "Hostname must contain only alphanumeric characters, dots, hyphens, and underscores"
+            )
+        return v

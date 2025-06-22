@@ -5,6 +5,7 @@ import pytest
 from frp_wrapper.tunnel import (
     HTTPTunnel,
     TCPTunnel,
+    TunnelConfig,
     TunnelStatus,
     TunnelType,
 )
@@ -243,26 +244,30 @@ class TestTunnelManager:
         """Test TunnelManager can be created and initialized."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        manager = TunnelManager(config, frp_binary_path="/usr/bin/frpc")
         assert manager is not None
         assert manager.registry is not None
+        assert manager.config.server_host == "test.example.com"
 
     def test_tunnel_manager_create_http_tunnel(self):
         """Test creating HTTP tunnel through manager."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(
+            server_host="test.example.com", default_domain="example.com"
+        )
+        manager = TunnelManager(config, frp_binary_path="/usr/bin/frpc")
         tunnel = manager.create_http_tunnel(
             tunnel_id="http-manager-test",
             local_port=3000,
             path="myapp",
-            custom_domains=["example.com"],
         )
 
         assert tunnel.id == "http-manager-test"
         assert tunnel.tunnel_type == TunnelType.HTTP
         assert tunnel.path == "myapp"
-        assert tunnel.custom_domains == ["example.com"]
+        assert tunnel.custom_domains == ["example.com"]  # From default_domain
 
         registry_tunnel = manager.registry.get_tunnel("http-manager-test")
         assert registry_tunnel is not None
@@ -271,7 +276,8 @@ class TestTunnelManager:
         """Test creating TCP tunnel through manager."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        manager = TunnelManager(config, frp_binary_path="/usr/bin/frpc")
         tunnel = manager.create_tcp_tunnel(
             tunnel_id="tcp-manager-test", local_port=3000, remote_port=8080
         )

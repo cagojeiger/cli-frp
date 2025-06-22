@@ -1,11 +1,21 @@
 """Tunnel management system with registry and lifecycle management."""
 
 import logging
+import shutil
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelStatus, TunnelType
+from .config import ConfigBuilder
+from .process import ProcessManager
+from .tunnel import (
+    BaseTunnel,
+    HTTPTunnel,
+    TCPTunnel,
+    TunnelConfig,
+    TunnelStatus,
+    TunnelType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -188,15 +198,37 @@ class TunnelRegistry(BaseModel):
 class TunnelManager:
     """Registry for active tunnels with lifecycle management."""
 
-    def __init__(self, max_tunnels: int = 10):
+    def __init__(self, config: TunnelConfig, frp_binary_path: str | None = None):
         """Initialize tunnel manager.
 
         Args:
-            max_tunnels: Maximum number of tunnels to allow
+            config: Tunnel configuration with server details
+            frp_binary_path: Path to FRP binary (auto-detected if None)
         """
-        self.registry = TunnelRegistry(max_tunnels=max_tunnels)
-        self._processes: dict[str, Any] = {}  # Store process handles
-        logger.info(f"Initialized TunnelManager with max_tunnels={max_tunnels}")
+        self.config = config
+        self.registry = TunnelRegistry(max_tunnels=config.max_tunnels)
+        self._processes: dict[str, ProcessManager] = {}  # Store process managers
+        self._frp_binary_path = frp_binary_path or self._find_frp_binary()
+        logger.info(
+            f"Initialized TunnelManager with server={config.server_host}, max_tunnels={config.max_tunnels}"
+        )
+
+    def _find_frp_binary(self) -> str:
+        """Find FRP binary in system PATH.
+
+        Returns:
+            Path to FRP binary
+
+        Raises:
+            RuntimeError: If FRP binary not found
+        """
+        frp_binary = shutil.which("frpc")
+        if frp_binary is None:
+            raise RuntimeError(
+                "FRP client binary 'frpc' not found in PATH. "
+                "Please install FRP and ensure 'frpc' is available in your PATH."
+            )
+        return frp_binary
 
     def create_http_tunnel(
         self,
@@ -220,6 +252,10 @@ class TunnelManager:
         Returns:
             Created HTTP tunnel
         """
+        # Use default domain if no custom domains provided
+        if custom_domains is None and self.config.default_domain:
+            custom_domains = [self.config.default_domain]
+
         tunnel = HTTPTunnel(
             id=tunnel_id,
             local_port=local_port,
@@ -418,7 +454,7 @@ class TunnelManager:
         return success
 
     def _start_frp_process(self, tunnel: BaseTunnel) -> bool:
-        """Start FRP process for tunnel (implementation placeholder).
+        """Start FRP process for tunnel.
 
         Args:
             tunnel: Tunnel to start process for
@@ -426,11 +462,65 @@ class TunnelManager:
         Returns:
             True if process started successfully
         """
-        logger.debug(f"Starting FRP process for tunnel {tunnel.id}")
-        return True
+        try:
+            logger.debug(f"Starting FRP process for tunnel {tunnel.id}")
+
+            # Create configuration for this tunnel
+            with ConfigBuilder() as config_builder:
+                config_builder.add_server(
+                    self.config.server_host,
+                    token=self.config.auth_token,
+                )
+
+                # Add tunnel-specific configuration
+                if isinstance(tunnel, HTTPTunnel):
+                    config_builder.add_http_proxy(
+                        name=tunnel.id,
+                        local_port=tunnel.local_port,
+                        locations=tunnel.locations,
+                        custom_domains=tunnel.custom_domains,
+                    )
+                elif isinstance(tunnel, TCPTunnel):
+                    config_builder.add_tcp_proxy(
+                        name=tunnel.id,
+                        local_port=tunnel.local_port,
+                        remote_port=tunnel.remote_port,
+                    )
+                else:
+                    logger.error(f"Unsupported tunnel type: {type(tunnel)}")
+                    return False
+
+                config_path = config_builder.build()
+
+            # Start FRP process
+            process_manager = ProcessManager(self._frp_binary_path, config_path)
+            success = process_manager.start()
+
+            if success:
+                # Wait for startup
+                startup_success = process_manager.wait_for_startup(timeout=10)
+                if startup_success and process_manager.is_running():
+                    self._processes[tunnel.id] = process_manager
+                    logger.info(
+                        f"Successfully started FRP process for tunnel {tunnel.id}"
+                    )
+                    return True
+                else:
+                    logger.error(
+                        f"FRP process for tunnel {tunnel.id} failed to start properly"
+                    )
+                    process_manager.stop()
+                    return False
+            else:
+                logger.error(f"Failed to start FRP process for tunnel {tunnel.id}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Exception starting FRP process for tunnel {tunnel.id}: {e}")
+            return False
 
     def _stop_frp_process(self, tunnel_id: str) -> bool:
-        """Stop FRP process for tunnel (implementation placeholder).
+        """Stop FRP process for tunnel.
 
         Args:
             tunnel_id: ID of tunnel to stop process for
@@ -438,5 +528,36 @@ class TunnelManager:
         Returns:
             True if process stopped successfully
         """
-        logger.debug(f"Stopping FRP process for tunnel {tunnel_id}")
-        return True
+        try:
+            logger.debug(f"Stopping FRP process for tunnel {tunnel_id}")
+
+            if tunnel_id not in self._processes:
+                logger.warning(f"No FRP process found for tunnel {tunnel_id}")
+                return True
+
+            process_manager = self._processes[tunnel_id]
+            success = process_manager.stop()
+
+            if success:
+                logger.info(f"Successfully stopped FRP process for tunnel {tunnel_id}")
+            else:
+                logger.warning(
+                    f"FRP process for tunnel {tunnel_id} may not have stopped cleanly"
+                )
+
+            # Remove from processes dict regardless of stop success
+            del self._processes[tunnel_id]
+            return success
+
+        except Exception as e:
+            logger.error(f"Exception stopping FRP process for tunnel {tunnel_id}: {e}")
+            # Still remove from processes dict to avoid leaks
+            if tunnel_id in self._processes:
+                del self._processes[tunnel_id]
+            return False
+
+
+# Rebuild tunnel models after TunnelManager is defined to resolve forward references
+BaseTunnel.model_rebuild()
+HTTPTunnel.model_rebuild()
+TCPTunnel.model_rebuild()

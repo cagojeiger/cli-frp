@@ -15,7 +15,7 @@ from .exceptions import (
 )
 from .logging import get_logger
 from .process import ProcessManager
-from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel
+from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
 from .tunnel_manager import TunnelManager
 
 logger = get_logger(__name__)
@@ -61,7 +61,10 @@ class FRPClient:
         self._process_manager: ProcessManager | None = None
         self._config_builder: ConfigBuilder | None = None
         self._connected = False
-        self.tunnel_manager = TunnelManager()
+        tunnel_config = TunnelConfig(
+            server_host=self.server, auth_token=self.auth_token, max_tunnels=10
+        )
+        self.tunnel_manager = TunnelManager(tunnel_config)
 
         logger.info(
             "FRPClient initialized",
