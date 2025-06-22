@@ -210,7 +210,9 @@ class TunnelManager:
         self.registry = TunnelRegistry(max_tunnels=config.max_tunnels)
         self._processes: dict[str, ProcessManager] = {}  # Store process managers
         self._frp_binary_path = frp_binary_path or self._find_frp_binary()
-        self._path_detector = PathConflictDetector()  # Path conflict detection
+        self._path_detector: PathConflictDetector = (
+            PathConflictDetector()
+        )  # Path conflict detection
         logger.info(
             f"Initialized TunnelManager with server={config.server_host}, max_tunnels={config.max_tunnels}"
         )
@@ -262,7 +264,7 @@ class TunnelManager:
             raise TunnelManagerError(f"Invalid path format: '{path}'")
 
         # Check for path conflicts with existing tunnels
-        conflicts = self._path_detector.detect_conflicts(normalized_path, tunnel_id)
+        conflicts = self._path_detector.detect_conflicts(normalized_path)
         if conflicts:
             conflict_messages = [conflict.message for conflict in conflicts]
             raise TunnelManagerError(
@@ -283,9 +285,9 @@ class TunnelManager:
         )
 
         self.registry.add_tunnel(tunnel)
-        
+
         self._path_detector.register_path(normalized_path, tunnel_id)
-        
+
         logger.info(f"Created HTTP tunnel {tunnel_id} for path /{normalized_path}")
         return tunnel
 
