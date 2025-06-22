@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .config import ConfigBuilder
+from .path_routing import PathConflictDetector, PathValidator
 from .process import ProcessManager
 from .tunnel import (
     BaseTunnel,
@@ -209,6 +210,7 @@ class TunnelManager:
         self.registry = TunnelRegistry(max_tunnels=config.max_tunnels)
         self._processes: dict[str, ProcessManager] = {}  # Store process managers
         self._frp_binary_path = frp_binary_path or self._find_frp_binary()
+        self._path_detector = PathConflictDetector()  # Path conflict detection
         logger.info(
             f"Initialized TunnelManager with server={config.server_host}, max_tunnels={config.max_tunnels}"
         )
@@ -251,7 +253,22 @@ class TunnelManager:
 
         Returns:
             Created HTTP tunnel
+
+        Raises:
+            TunnelManagerError: If path conflicts with existing tunnels or is invalid
         """
+        normalized_path = PathValidator.normalize_path(path)
+        if not PathValidator.validate_path(normalized_path):
+            raise TunnelManagerError(f"Invalid path format: '{path}'")
+
+        # Check for path conflicts with existing tunnels
+        conflicts = self._path_detector.detect_conflicts(normalized_path, tunnel_id)
+        if conflicts:
+            conflict_messages = [conflict.message for conflict in conflicts]
+            raise TunnelManagerError(
+                f"Path conflicts detected: {'; '.join(conflict_messages)}"
+            )
+
         # Use default domain if no custom domains provided
         if custom_domains is None and self.config.default_domain:
             custom_domains = [self.config.default_domain]
@@ -259,14 +276,17 @@ class TunnelManager:
         tunnel = HTTPTunnel(
             id=tunnel_id,
             local_port=local_port,
-            path=path,
+            path=normalized_path,
             custom_domains=custom_domains or [],
             strip_path=strip_path,
             websocket=websocket,
         )
 
         self.registry.add_tunnel(tunnel)
-        logger.info(f"Created HTTP tunnel {tunnel_id} for path /{path}")
+        
+        self._path_detector.register_path(normalized_path, tunnel_id)
+        
+        logger.info(f"Created HTTP tunnel {tunnel_id} for path /{normalized_path}")
         return tunnel
 
     def create_tcp_tunnel(
@@ -376,6 +396,10 @@ class TunnelManager:
             self.stop_tunnel(tunnel_id)
 
         removed_tunnel = self.registry.remove_tunnel(tunnel_id)
+
+        # Unregister path from conflict detector if it's an HTTP tunnel
+        if isinstance(removed_tunnel, HTTPTunnel):
+            self._path_detector.unregister_path(removed_tunnel.path)
 
         if tunnel_id in self._processes:
             del self._processes[tunnel_id]
