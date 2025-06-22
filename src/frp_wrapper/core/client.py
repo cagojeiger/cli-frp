@@ -4,7 +4,7 @@ import os
 import shutil
 import uuid
 from types import TracebackType
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from ..common.exceptions import (
     AuthenticationError,
@@ -18,10 +18,12 @@ from ..common.utils import (
     validate_non_empty_string,
     validate_port,
 )
-from ..tunnels.manager import TunnelManager
 from ..tunnels.models import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
 from .config import ConfigBuilder
 from .process import ProcessManager
+
+if TYPE_CHECKING:
+    from ..tunnels.manager import TunnelManager
 
 logger = get_logger(__name__)
 
@@ -68,6 +70,7 @@ class FRPClient:
             default_domain=None,
             max_tunnels=10,
         )
+        from ..tunnels.manager import TunnelManager
         self.tunnel_manager = TunnelManager(
             tunnel_config, frp_binary_path=self.binary_path
         )

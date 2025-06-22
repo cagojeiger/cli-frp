@@ -214,6 +214,11 @@ class TunnelManager:
             f"Initialized TunnelManager with server={config.server_host}, max_tunnels={config.max_tunnels}"
         )
 
+    @property
+    def _processes(self):
+        """Backward compatibility property for tests."""
+        return self._process_manager._processes
+
     def _find_frp_binary(self) -> str:
         """Find FRP binary in system PATH.
 
@@ -398,6 +403,9 @@ class TunnelManager:
             self.stop_tunnel(tunnel_id)
 
         removed_tunnel = self.registry.remove_tunnel(tunnel_id)
+
+        if tunnel_id in self._process_manager._processes:
+            del self._process_manager._processes[tunnel_id]
 
         # Unregister path from conflict detector if it's an HTTP tunnel
         if isinstance(removed_tunnel, HTTPTunnel):

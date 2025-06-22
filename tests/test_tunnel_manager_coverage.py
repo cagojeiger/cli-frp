@@ -97,6 +97,7 @@ class TestTunnelManagerErrorPaths:
             assert result is False
 
             updated_tunnel = manager.registry.get_tunnel("test")
+            assert updated_tunnel is not None
             assert updated_tunnel.status == TunnelStatus.ERROR
 
     def test_start_tunnel_process_exception(self):
@@ -119,6 +120,7 @@ class TestTunnelManagerErrorPaths:
                 manager.start_tunnel("test")
 
             updated_tunnel = manager.registry.get_tunnel("test")
+            assert updated_tunnel is not None
             assert updated_tunnel.status == TunnelStatus.ERROR
 
     def test_stop_tunnel_not_connected(self):
