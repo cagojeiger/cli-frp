@@ -1,10 +1,11 @@
 """Integration tests for ProcessManager with real FRP binary."""
 
-import pytest
-import tempfile
 import os
 import shutil
-from typing import Optional
+import tempfile
+
+import pytest
+
 from frp_wrapper.process import ProcessManager
 
 
@@ -24,7 +25,7 @@ class TestProcessManagerIntegration:
         server_port = 7000
         """
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
             f.write(config_content)
             config_path = f.name
 
@@ -55,14 +56,14 @@ class TestProcessManagerIntegration:
         invalid_config = "this should fail"
         """
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
             f.write(config_content)
             config_path = f.name
 
         try:
             pm = ProcessManager(frp_binary, config_path)
             pm.start()
-            
+
             assert not pm.wait_for_startup(timeout=2.0)
 
         finally:
@@ -83,16 +84,16 @@ class TestProcessManagerIntegration:
         log_level = "info"
         """
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
             f.write(config_content)
             config_path = f.name
 
         try:
             pm = ProcessManager(frp_binary, config_path)
             assert pm.start()
-            
+
             startup_success = pm.wait_for_startup(timeout=2.0)
-            
+
             assert startup_success or not pm.is_running()
 
             if pm.is_running():
@@ -101,25 +102,25 @@ class TestProcessManagerIntegration:
         finally:
             os.unlink(config_path)
 
-    def _find_frp_binary(self) -> Optional[str]:
+    def _find_frp_binary(self) -> str | None:
         """Find FRP binary in system PATH or common locations"""
-        binary_names = ['frpc', 'frpc.exe']
-        
+        binary_names = ["frpc", "frpc.exe"]
+
         for binary_name in binary_names:
             binary_path = shutil.which(binary_name)
             if binary_path:
                 return binary_path
-        
+
         common_paths = [
-            '/usr/local/bin/frpc',
-            '/usr/bin/frpc',
-            './frpc',
-            '../frpc',
-            '../../frpc'
+            "/usr/local/bin/frpc",
+            "/usr/bin/frpc",
+            "./frpc",
+            "../frpc",
+            "../../frpc",
         ]
-        
+
         for path in common_paths:
             if os.path.exists(path) and os.access(path, os.X_OK):
                 return path
-        
+
         return None
