@@ -30,7 +30,9 @@ dev = [
 
 [tool.uv]
 dev-dependencies = [
-    "ipykernel>=6.0",  # For Jupyter support
+    "ipykernel>=6.0", # For Jupyter support
+    "pytest>=8.4.1",
+    "pytest-cov>=6.2.1",
 ]
 
 [tool.ruff]
@@ -93,4 +95,9 @@ pythonpath = ["src"]
 markers = [
     "integration: marks tests as integration tests (deselect with '-m \"not integration\"')",
     "asyncio: marks tests as async tests",
+]
+
+[dependency-groups]
+dev = [
+    "tomli>=2.2.1",
 ]
