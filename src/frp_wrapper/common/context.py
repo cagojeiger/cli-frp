@@ -219,12 +219,12 @@ class ContextManagerMixin:
         try:
             cleanup_errors = self._resource_tracker.cleanup_all()
 
-            if cleanup_errors and not self.context_config.suppress_cleanup_errors:
+            if cleanup_errors:
                 if self.context_config.log_cleanup_errors:
                     for error in cleanup_errors:
                         logger.error(f"Cleanup error: {error}")
 
-                if cleanup_errors:
+                if not self.context_config.suppress_cleanup_errors:
                     raise cleanup_errors[0]
 
         except Exception as cleanup_exc:

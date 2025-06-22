@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -249,7 +249,73 @@ class TestTunnelGroup:
         mock_tunnel.manager = Mock()
         mock_tunnel.manager.stop_tunnel.side_effect = Exception("Stop failed")
 
-        group._cleanup_tunnel(mock_tunnel)
+        with patch('frp_wrapper.tunnels.group.logger') as mock_logger:
+            group._cleanup_tunnel(mock_tunnel)
+            mock_logger.error.assert_called_once()
+
+    def test_add_tcp_tunnel_max_limit_exceeded(self, mock_client):
+        """Test add_tcp_tunnel when max tunnels limit is exceeded"""
+        config = TunnelGroupConfig(group_name="test-group", max_tunnels=1)
+        group = TunnelGroup(mock_client, config)
+
+        mock_client.expose_tcp.return_value = Mock(id="tunnel1")
+        group.add_tcp_tunnel(3000)
+
+        # Try to add second tunnel - should raise TunnelError
+        with pytest.raises(TunnelError, match="Maximum tunnels"):
+            group.add_tcp_tunnel(3001)
+
+    def test_start_all_with_manager_exception(self, mock_client):
+        """Test start_all method with manager exception"""
+        group = TunnelGroup(mock_client)
+        
+        mock_tunnel = Mock()
+        mock_tunnel.id = "test-tunnel"
+        mock_tunnel.manager = Mock()
+        mock_tunnel.manager.start_tunnel.side_effect = Exception("Start failed")
+        
+        group.tunnels = [mock_tunnel]
+
+        with patch('frp_wrapper.tunnels.group.logger') as mock_logger:
+            result = group.start_all()
+            
+            assert result is False
+            mock_logger.error.assert_called_once()
+            assert "Failed to start tunnel" in str(mock_logger.error.call_args)
+
+    def test_context_manager_exit_with_cleanup_exception(self, mock_client):
+        """Test TunnelGroup context manager __exit__ with cleanup exception"""
+        group = TunnelGroup(mock_client)
+        
+        def failing_cleanup():
+            raise Exception("Cleanup failed")
+        
+        group._resource_tracker.register_resource("test", "resource", failing_cleanup)
+        
+        with patch('frp_wrapper.tunnels.group.logger') as mock_logger:
+            with group:
+                pass
+            
+            mock_logger.error.assert_called()
+
+    def test_context_manager_exit_with_cleanup_errors_list(self, mock_client):
+        """Test TunnelGroup context manager __exit__ with cleanup errors list"""
+        group = TunnelGroup(mock_client)
+        
+        def failing_cleanup_1():
+            raise Exception("Error 1")
+        
+        def failing_cleanup_2():
+            raise Exception("Error 2")
+        
+        group._resource_tracker.register_resource("test1", "resource1", failing_cleanup_1)
+        group._resource_tracker.register_resource("test2", "resource2", failing_cleanup_2)
+        
+        with patch('frp_wrapper.tunnels.group.logger') as mock_logger:
+            with group:
+                pass
+            
+            assert mock_logger.error.call_count == 2
 
 
 class TestTunnelGroupFunction:
