@@ -120,7 +120,9 @@ class TestTunnelGroup:
         result = group.start_all()
 
         assert result is True
-        mock_http_tunnel.manager.start_tunnel.assert_called_once_with(mock_http_tunnel.id)
+        mock_http_tunnel.manager.start_tunnel.assert_called_once_with(
+            mock_http_tunnel.id
+        )
         mock_tcp_tunnel.manager.start_tunnel.assert_called_once_with(mock_tcp_tunnel.id)
 
     def test_tunnel_group_start_all_with_failures(self, mock_client, mock_http_tunnel):
