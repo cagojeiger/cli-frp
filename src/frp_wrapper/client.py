@@ -17,7 +17,11 @@ from .logging import get_logger
 from .process import ProcessManager
 from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
 from .tunnel_manager import TunnelManager
-from .utils import validate_non_empty_string, validate_port
+from .utils import (
+    sanitize_log_data,
+    validate_non_empty_string,
+    validate_port,
+)
 
 logger = get_logger(__name__)
 
@@ -68,12 +72,16 @@ class FRPClient:
             tunnel_config, frp_binary_path=self.binary_path
         )
 
-        logger.info(
-            "FRPClient initialized",
-            server=self.server,
-            port=self.port,
-            binary_path=self.binary_path,
+        # Log initialization with sensitive data masked
+        log_data = sanitize_log_data(
+            {
+                "server": self.server,
+                "port": self.port,
+                "auth_token": self.auth_token,
+                "binary_path": self.binary_path,
+            }
         )
+        logger.info("FRPClient initialized", **log_data)
 
     @staticmethod
     def find_frp_binary() -> str:

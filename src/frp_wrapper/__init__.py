@@ -12,7 +12,13 @@ from .tunnel import (
     TunnelType,
 )
 from .tunnel_manager import TunnelManager
-from .utils import validate_non_empty_string, validate_port
+from .tunnel_process import TunnelProcessManager
+from .utils import (
+    mask_sensitive_data,
+    sanitize_log_data,
+    validate_non_empty_string,
+    validate_port,
+)
 
 # Setup logging on package initialization
 setup_logging(level="INFO")
@@ -28,6 +34,7 @@ __all__ = [
     "ConfigBuilder",
     # Tunnel management (Checkpoint 3)
     "TunnelManager",
+    "TunnelProcessManager",
     "TunnelConfig",
     "BaseTunnel",
     "HTTPTunnel",
@@ -39,4 +46,6 @@ __all__ = [
     "setup_logging",
     "validate_port",
     "validate_non_empty_string",
+    "mask_sensitive_data",
+    "sanitize_log_data",
 ]

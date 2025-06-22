@@ -13,18 +13,27 @@ from functools import lru_cache
 from re import Pattern
 
 
-@lru_cache(maxsize=128)
+# Cache sizes optimized for typical usage patterns:
+# - Pattern compilation: 64 patterns should cover most common routing scenarios
+# - Path normalization: 512 paths to handle high-traffic applications with many endpoints
+@lru_cache(maxsize=64)
 def _compile_pattern_cached(pattern: str) -> Pattern[str]:
-    """Compile pattern to regex with caching for performance."""
+    """Compile pattern to regex with caching for performance.
+
+    Cache size: 64 patterns (typical applications use 10-50 unique path patterns)
+    """
     escaped = re.escape(pattern)
     escaped = escaped.replace(r"\*\*", ".*")  # ** matches everything including /
     escaped = escaped.replace(r"\*", "[^/]*")  # * matches anything except /
     return re.compile(f"^{escaped}$")
 
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=512)
 def _normalize_slashes_cached(path: str) -> str:
-    """Normalize multiple slashes with caching for performance."""
+    """Normalize multiple slashes with caching for performance.
+
+    Cache size: 512 paths (handles high-traffic apps with many unique endpoints)
+    """
     return re.sub(r"/+", "/", path)
 
 

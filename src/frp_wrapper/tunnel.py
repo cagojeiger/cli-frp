@@ -166,21 +166,42 @@ class HTTPTunnel(BaseTunnel):
                 "Path should not start with '/' - it will be added automatically"
             )
 
-        # Allow alphanumeric characters, hyphens, underscores, slashes, dots, and wildcards
+        # Enhanced security: More restrictive character validation
+        # Allow only: alphanumeric, hyphens, underscores, single slashes, single dots, and single wildcards
         if not re.match(r"^[a-zA-Z0-9/_\-.*]+$", v):
             raise ValueError(
                 "Path must contain only alphanumeric characters, hyphens, underscores, slashes, dots, and wildcards (*)"
             )
 
-        # Check for invalid patterns
-        if ".." in v:
-            raise ValueError("Path cannot contain '..' (directory traversal)")
+        # Security checks for path traversal and malicious patterns
+        security_checks = [
+            ("..", "Path cannot contain '..' (directory traversal)"),
+            ("./", "Path cannot contain './' (relative path)"),
+            ("***", "Path cannot contain triple wildcards"),
+            ("**/**", "Path cannot contain nested recursive wildcards"),
+            ("/**/", "Path cannot contain standalone recursive wildcards"),
+        ]
 
+        for pattern, error_msg in security_checks:
+            if pattern in v:
+                raise ValueError(error_msg)
+
+        # Path format validation
         if v.endswith("/"):
             raise ValueError("Path cannot end with '/'")
 
         if "//" in v:
             raise ValueError("Path cannot contain consecutive slashes")
+
+        # Additional security: prevent control characters and ensure reasonable length
+        MIN_PRINTABLE_CHAR = 32  # ASCII printable characters start at 32
+        MAX_PATH_LENGTH = 200  # Reasonable path length limit
+
+        if any(ord(char) < MIN_PRINTABLE_CHAR for char in v):
+            raise ValueError("Path cannot contain control characters")
+
+        if len(v) > MAX_PATH_LENGTH:
+            raise ValueError(f"Path too long (maximum {MAX_PATH_LENGTH} characters)")
 
         return v
 

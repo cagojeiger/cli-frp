@@ -302,7 +302,9 @@ class TestTunnelManager:
             tunnel_id="start-test", local_port=3000, path="myapp"
         )
 
-        with patch.object(manager, "_start_frp_process") as mock_start:
+        with patch.object(
+            manager._process_manager, "start_tunnel_process"
+        ) as mock_start:
             mock_start.return_value = True
 
             result = manager.start_tunnel("start-test")
@@ -333,11 +335,13 @@ class TestTunnelManager:
             manager = TunnelManager(config)
         manager.create_tcp_tunnel(tunnel_id="stop-test", local_port=3000)
 
-        with patch.object(manager, "_start_frp_process") as mock_start:
+        with patch.object(
+            manager._process_manager, "start_tunnel_process"
+        ) as mock_start:
             mock_start.return_value = True
             manager.start_tunnel("stop-test")
 
-        with patch.object(manager, "_stop_frp_process") as mock_stop:
+        with patch.object(manager._process_manager, "stop_tunnel_process") as mock_stop:
             mock_stop.return_value = True
 
             result = manager.stop_tunnel("stop-test")
@@ -375,7 +379,9 @@ class TestTunnelManager:
         manager.create_http_tunnel("active-1", 3000, "app1")
         manager.create_http_tunnel("inactive-1", 4000, "app2")
 
-        with patch.object(manager, "_start_frp_process") as mock_start:
+        with patch.object(
+            manager._process_manager, "start_tunnel_process"
+        ) as mock_start:
             mock_start.return_value = True
             manager.start_tunnel("active-1")
 
@@ -418,12 +424,14 @@ class TestTunnelManager:
         manager.create_http_tunnel("shutdown-1", 3000, "app1")
         manager.create_tcp_tunnel("shutdown-2", 4000)
 
-        with patch.object(manager, "_start_frp_process") as mock_start:
+        with patch.object(
+            manager._process_manager, "start_tunnel_process"
+        ) as mock_start:
             mock_start.return_value = True
             manager.start_tunnel("shutdown-1")
             manager.start_tunnel("shutdown-2")
 
-        with patch.object(manager, "_stop_frp_process") as mock_stop:
+        with patch.object(manager._process_manager, "stop_tunnel_process") as mock_stop:
             mock_stop.return_value = True
 
             result = manager.shutdown_all()

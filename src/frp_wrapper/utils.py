@@ -67,3 +67,57 @@ def normalize_path_slashes(path: str) -> str:
     path = path.strip("/")
     path = re.sub(r"/+", "/", path)
     return path
+
+
+def mask_sensitive_data(
+    value: str | None, mask_char: str = "*", show_chars: int = 4
+) -> str:
+    """Mask sensitive data for logging while preserving some characters for debugging.
+
+    Args:
+        value: Sensitive string to mask (e.g., auth token, password)
+        mask_char: Character to use for masking
+        show_chars: Number of characters to show at the end
+
+    Returns:
+        Masked string safe for logging
+    """
+    if not value:
+        return "<None>"
+
+    if len(value) <= show_chars:
+        return mask_char * len(value)
+
+    masked_length = len(value) - show_chars
+    return mask_char * masked_length + value[-show_chars:]
+
+
+def sanitize_log_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Sanitize dictionary data for safe logging by masking sensitive fields.
+
+    Args:
+        data: Dictionary potentially containing sensitive data
+
+    Returns:
+        Sanitized dictionary safe for logging
+    """
+    sensitive_fields = {
+        "auth_token",
+        "token",
+        "password",
+        "secret",
+        "key",
+        "api_key",
+        "access_token",
+        "refresh_token",
+        "bearer_token",
+    }
+
+    sanitized = {}
+    for key, value in data.items():
+        if any(sensitive_field in key.lower() for sensitive_field in sensitive_fields):
+            sanitized[key] = mask_sensitive_data(str(value) if value else None)
+        else:
+            sanitized[key] = value
+
+    return sanitized

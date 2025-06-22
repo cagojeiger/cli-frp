@@ -569,6 +569,31 @@ class TestHTTPTunnel:
         with pytest.raises(ValidationError):
             HTTPTunnel(id="test", local_port=3000, path="api/")  # Trailing slash
 
+        # Test enhanced security validations
+        with pytest.raises(ValidationError):
+            HTTPTunnel(id="test", local_port=3000, path="./api")  # Relative path
+
+        with pytest.raises(ValidationError):
+            HTTPTunnel(id="test", local_port=3000, path="api/***")  # Triple wildcards
+
+        with pytest.raises(ValidationError):
+            HTTPTunnel(
+                id="test", local_port=3000, path="**/**"
+            )  # Nested recursive wildcards
+
+        with pytest.raises(ValidationError):
+            HTTPTunnel(
+                id="test", local_port=3000, path="/**/"
+            )  # Standalone recursive wildcards
+
+        with pytest.raises(ValidationError):
+            HTTPTunnel(
+                id="test", local_port=3000, path="api\x00test"
+            )  # Control characters
+
+        with pytest.raises(ValidationError, match="Path too long"):
+            HTTPTunnel(id="test", local_port=3000, path="a" * 201)  # Too long path
+
     def test_http_tunnel_multiple_custom_domains(self):
         """Test HTTP tunnel with multiple custom domains"""
         tunnel = HTTPTunnel(

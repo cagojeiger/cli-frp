@@ -43,13 +43,15 @@ class TestTunnelManagerProcessManagement:
         """Create test TCP tunnel."""
         return TCPTunnel(id="test-tcp", local_port=4000, remote_port=8080)
 
-    def test_start_frp_process_http_tunnel_success(self, tunnel_manager, http_tunnel):
+    def test_start_tunnel_process_http_tunnel_success(
+        self, tunnel_manager, http_tunnel
+    ):
         """Test successful FRP process start for HTTP tunnel."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_manager.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_manager.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -63,7 +65,7 @@ class TestTunnelManagerProcessManagement:
             mock_process.is_running.return_value = True
 
             # Execute
-            result = tunnel_manager._start_frp_process(http_tunnel)
+            result = tunnel_manager._process_manager.start_tunnel_process(http_tunnel)
 
             # Verify
             assert result is True
@@ -80,13 +82,13 @@ class TestTunnelManagerProcessManagement:
             mock_process.wait_for_startup.assert_called_once_with(timeout=10)
             assert tunnel_manager._processes["test-http"] == mock_process
 
-    def test_start_frp_process_tcp_tunnel_success(self, tunnel_manager, tcp_tunnel):
+    def test_start_tunnel_process_tcp_tunnel_success(self, tunnel_manager, tcp_tunnel):
         """Test successful FRP process start for TCP tunnel."""
         tunnel_manager.registry.add_tunnel(tcp_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_manager.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_manager.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -100,7 +102,7 @@ class TestTunnelManagerProcessManagement:
             mock_process.is_running.return_value = True
 
             # Execute
-            result = tunnel_manager._start_frp_process(tcp_tunnel)
+            result = tunnel_manager._process_manager.start_tunnel_process(tcp_tunnel)
 
             # Verify
             assert result is True
@@ -114,13 +116,13 @@ class TestTunnelManagerProcessManagement:
             mock_process.wait_for_startup.assert_called_once_with(timeout=10)
             assert tunnel_manager._processes["test-tcp"] == mock_process
 
-    def test_start_frp_process_start_failure(self, tunnel_manager, http_tunnel):
+    def test_start_tunnel_process_start_failure(self, tunnel_manager, http_tunnel):
         """Test FRP process start failure."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_manager.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_manager.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -132,19 +134,19 @@ class TestTunnelManagerProcessManagement:
             mock_process.start.return_value = False  # Process start fails
 
             # Execute
-            result = tunnel_manager._start_frp_process(http_tunnel)
+            result = tunnel_manager._process_manager.start_tunnel_process(http_tunnel)
 
             # Verify
             assert result is False
-            assert "test-http" not in tunnel_manager._processes
+            assert "test-http" not in tunnel_manager._process_manager._processes
 
-    def test_start_frp_process_startup_failure(self, tunnel_manager, http_tunnel):
+    def test_start_tunnel_process_startup_failure(self, tunnel_manager, http_tunnel):
         """Test FRP process startup failure after start."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_manager.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_manager.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -158,20 +160,22 @@ class TestTunnelManagerProcessManagement:
             mock_process.is_running.return_value = False
 
             # Execute
-            result = tunnel_manager._start_frp_process(http_tunnel)
+            result = tunnel_manager._process_manager.start_tunnel_process(http_tunnel)
 
             # Verify
             assert result is False
             mock_process.stop.assert_called_once()  # Should cleanup failed process
-            assert "test-http" not in tunnel_manager._processes
+            assert "test-http" not in tunnel_manager._process_manager._processes
 
-    def test_start_frp_process_running_check_failure(self, tunnel_manager, http_tunnel):
+    def test_start_tunnel_process_running_check_failure(
+        self, tunnel_manager, http_tunnel
+    ):
         """Test FRP process running check failure."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_manager.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_manager.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -185,15 +189,15 @@ class TestTunnelManagerProcessManagement:
             mock_process.is_running.return_value = False  # Not running after startup
 
             # Execute
-            result = tunnel_manager._start_frp_process(http_tunnel)
+            result = tunnel_manager._process_manager.start_tunnel_process(http_tunnel)
 
             # Verify
             assert result is False
             mock_process.stop.assert_called_once()
-            assert "test-http" not in tunnel_manager._processes
+            assert "test-http" not in tunnel_manager._process_manager._processes
 
-    def test_start_frp_process_exception_handling(self, tunnel_manager, http_tunnel):
-        """Test exception handling in _start_frp_process."""
+    def test_start_tunnel_process_exception_handling(self, tunnel_manager, http_tunnel):
+        """Test exception handling in start_tunnel_process."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with patch("frp_wrapper.tunnel_manager.ConfigBuilder") as mock_config_builder:
@@ -201,49 +205,51 @@ class TestTunnelManagerProcessManagement:
             mock_config_builder.side_effect = Exception("Config error")
 
             # Execute
-            result = tunnel_manager._start_frp_process(http_tunnel)
+            result = tunnel_manager._process_manager.start_tunnel_process(http_tunnel)
 
             # Verify
             assert result is False
-            assert "test-http" not in tunnel_manager._processes
+            assert "test-http" not in tunnel_manager._process_manager._processes
 
-    def test_start_frp_process_unsupported_tunnel_type(self, tunnel_manager):
-        """Test _start_frp_process with unsupported tunnel type."""
+    def test_start_tunnel_process_unsupported_tunnel_type(self, tunnel_manager):
+        """Test start_tunnel_process with unsupported tunnel type."""
         # Create a mock tunnel with invalid type
         invalid_tunnel = Mock()
         invalid_tunnel.id = "invalid-tunnel"
         invalid_tunnel.local_port = 3000
 
         # Make isinstance checks fail for both HTTPTunnel and TCPTunnel
-        with patch("frp_wrapper.tunnel_manager.isinstance", return_value=False):
-            result = tunnel_manager._start_frp_process(invalid_tunnel)
+        with patch("frp_wrapper.tunnel_process.isinstance", return_value=False):
+            result = tunnel_manager._process_manager.start_tunnel_process(
+                invalid_tunnel
+            )
 
             assert result is False
 
-    def test_stop_frp_process_success(self, tunnel_manager):
+    def test_stop_tunnel_process_success(self, tunnel_manager):
         """Test successful FRP process stop."""
         # Setup a mock process in the processes dict
         mock_process = Mock(spec=ProcessManager)
         mock_process.stop.return_value = True
-        tunnel_manager._processes["test-tunnel"] = mock_process
+        tunnel_manager._process_manager._processes["test-tunnel"] = mock_process
 
         # Execute
-        result = tunnel_manager._stop_frp_process("test-tunnel")
+        result = tunnel_manager._process_manager.stop_tunnel_process("test-tunnel")
 
         # Verify
         assert result is True
         mock_process.stop.assert_called_once()
         assert "test-tunnel" not in tunnel_manager._processes
 
-    def test_stop_frp_process_stop_failure(self, tunnel_manager):
+    def test_stop_tunnel_process_stop_failure(self, tunnel_manager):
         """Test FRP process stop failure."""
         # Setup a mock process in the processes dict
         mock_process = Mock(spec=ProcessManager)
         mock_process.stop.return_value = False  # Stop fails
-        tunnel_manager._processes["test-tunnel"] = mock_process
+        tunnel_manager._process_manager._processes["test-tunnel"] = mock_process
 
         # Execute
-        result = tunnel_manager._stop_frp_process("test-tunnel")
+        result = tunnel_manager._process_manager.stop_tunnel_process("test-tunnel")
 
         # Verify
         assert result is False
@@ -251,23 +257,25 @@ class TestTunnelManagerProcessManagement:
         # Process should still be removed from dict even if stop fails
         assert "test-tunnel" not in tunnel_manager._processes
 
-    def test_stop_frp_process_no_process_found(self, tunnel_manager):
+    def test_stop_tunnel_process_no_process_found(self, tunnel_manager):
         """Test stopping FRP process when no process is found."""
         # Execute with tunnel that has no process
-        result = tunnel_manager._stop_frp_process("nonexistent-tunnel")
+        result = tunnel_manager._process_manager.stop_tunnel_process(
+            "nonexistent-tunnel"
+        )
 
         # Verify - should return True (considered successful)
         assert result is True
 
-    def test_stop_frp_process_exception_handling(self, tunnel_manager):
-        """Test exception handling in _stop_frp_process."""
+    def test_stop_tunnel_process_exception_handling(self, tunnel_manager):
+        """Test exception handling in stop_tunnel_process."""
         # Setup a mock process that raises exception on stop
         mock_process = Mock(spec=ProcessManager)
         mock_process.stop.side_effect = Exception("Stop error")
-        tunnel_manager._processes["test-tunnel"] = mock_process
+        tunnel_manager._process_manager._processes["test-tunnel"] = mock_process
 
         # Execute
-        result = tunnel_manager._stop_frp_process("test-tunnel")
+        result = tunnel_manager._process_manager.stop_tunnel_process("test-tunnel")
 
         # Verify
         assert result is False
@@ -278,7 +286,9 @@ class TestTunnelManagerProcessManagement:
         """Test integration between start_tunnel and process management."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
-        with patch.object(tunnel_manager, "_start_frp_process") as mock_start:
+        with patch.object(
+            tunnel_manager._process_manager, "start_tunnel_process"
+        ) as mock_start:
             mock_start.return_value = True
 
             # Start tunnel
@@ -298,7 +308,9 @@ class TestTunnelManagerProcessManagement:
         """Test start_tunnel when process start fails."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
-        with patch.object(tunnel_manager, "_start_frp_process") as mock_start:
+        with patch.object(
+            tunnel_manager._process_manager, "start_tunnel_process"
+        ) as mock_start:
             mock_start.return_value = False  # Process start fails
 
             # Start tunnel
@@ -320,7 +332,9 @@ class TestTunnelManagerProcessManagement:
         connected_tunnel = http_tunnel.with_status(TunnelStatus.CONNECTED)
         tunnel_manager.registry.add_tunnel(connected_tunnel)
 
-        with patch.object(tunnel_manager, "_stop_frp_process") as mock_stop:
+        with patch.object(
+            tunnel_manager._process_manager, "stop_tunnel_process"
+        ) as mock_stop:
             mock_stop.return_value = True
 
             # Stop tunnel

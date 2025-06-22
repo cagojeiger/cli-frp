@@ -90,7 +90,9 @@ class TestTunnelManagerErrorPaths:
         tunnel = HTTPTunnel(id="test", local_port=3000, path="app")
         manager.registry.add_tunnel(tunnel)
 
-        with patch.object(manager, "_start_frp_process", return_value=False):
+        with patch.object(
+            manager._process_manager, "start_tunnel_process", return_value=False
+        ):
             result = manager.start_tunnel("test")
             assert result is False
 
@@ -107,7 +109,9 @@ class TestTunnelManagerErrorPaths:
         manager.registry.add_tunnel(tunnel)
 
         with patch.object(
-            manager, "_start_frp_process", side_effect=Exception("Process error")
+            manager._process_manager,
+            "start_tunnel_process",
+            side_effect=Exception("Process error"),
         ):
             with pytest.raises(
                 TunnelManagerError, match="Failed to start tunnel: Process error"
@@ -142,7 +146,9 @@ class TestTunnelManagerErrorPaths:
         )
         manager.registry.tunnels["test"] = tunnel
 
-        with patch.object(manager, "_stop_frp_process", return_value=False):
+        with patch.object(
+            manager._process_manager, "stop_tunnel_process", return_value=False
+        ):
             result = manager.stop_tunnel("test")
             assert result is False
 
@@ -158,7 +164,9 @@ class TestTunnelManagerErrorPaths:
         manager.registry.tunnels["test"] = tunnel
 
         with patch.object(
-            manager, "_stop_frp_process", side_effect=Exception("Stop error")
+            manager._process_manager,
+            "stop_tunnel_process",
+            side_effect=Exception("Stop error"),
         ):
             with pytest.raises(
                 TunnelManagerError, match="Failed to stop tunnel: Stop error"
@@ -175,14 +183,14 @@ class TestTunnelManagerErrorPaths:
             id="test", local_port=3000, path="app", status=TunnelStatus.CONNECTED
         )
         manager.registry.tunnels["test"] = tunnel
-        manager._processes["test"] = Mock()  # Simulate process handle
+        manager._process_manager._processes["test"] = Mock()  # Simulate process handle
 
         with patch.object(manager, "stop_tunnel") as mock_stop:
             removed_tunnel = manager.remove_tunnel("test")
 
             mock_stop.assert_called_once_with("test")
             assert removed_tunnel.id == "test"
-            assert "test" not in manager._processes
+            assert "test" not in manager._process_manager._processes
 
     def test_remove_tunnel_with_process_handle(self):
         """Test removing tunnel cleans up process handle."""
@@ -192,12 +200,12 @@ class TestTunnelManagerErrorPaths:
             manager = TunnelManager(config)
         tunnel = HTTPTunnel(id="test", local_port=3000, path="app")
         manager.registry.add_tunnel(tunnel)
-        manager._processes["test"] = Mock()  # Simulate process handle
+        manager._process_manager._processes["test"] = Mock()  # Simulate process handle
 
         removed_tunnel = manager.remove_tunnel("test")
 
         assert removed_tunnel.id == "test"
-        assert "test" not in manager._processes
+        assert "test" not in manager._process_manager._processes
 
     def test_get_tunnel_info_tcp_tunnel(self):
         """Test get_tunnel_info for TCP tunnel type."""
