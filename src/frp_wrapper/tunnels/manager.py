@@ -215,7 +215,7 @@ class TunnelManager:
         )
 
     @property
-    def _processes(self):
+    def _processes(self) -> dict[str, Any]:
         """Backward compatibility property for tests."""
         return self._process_manager._processes
 

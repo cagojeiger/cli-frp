@@ -73,7 +73,9 @@ class TestTunnelManagerIntegration:
         )
 
         # Mock the process manager to avoid actually starting FRP
-        with patch.object(manager._process_manager, 'start_tunnel_process', return_value=True):
+        with patch.object(
+            manager._process_manager, "start_tunnel_process", return_value=True
+        ):
             # Try to start tunnel
             success = manager.start_tunnel("test-http")
             assert success
@@ -91,7 +93,9 @@ class TestTunnelManagerIntegration:
         )
 
         # Mock the process manager to avoid actually starting FRP
-        with patch.object(manager._process_manager, 'start_tunnel_process', return_value=True):
+        with patch.object(
+            manager._process_manager, "start_tunnel_process", return_value=True
+        ):
             # Try to start tunnel
             success = manager.start_tunnel("test-tcp")
             assert success
@@ -110,8 +114,12 @@ class TestTunnelManagerIntegration:
         tunnel_with_manager = tunnel.with_manager(manager)
 
         # Mock process management
-        with patch.object(manager._process_manager, 'start_tunnel_process', return_value=True):
-            with patch.object(manager._process_manager, 'stop_tunnel_process', return_value=True):
+        with patch.object(
+            manager._process_manager, "start_tunnel_process", return_value=True
+        ):
+            with patch.object(
+                manager._process_manager, "stop_tunnel_process", return_value=True
+            ):
                 # Use context manager
                 with tunnel_with_manager as active_tunnel:
                     assert active_tunnel.status == TunnelStatus.CONNECTED

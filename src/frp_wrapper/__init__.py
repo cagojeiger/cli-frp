@@ -1,6 +1,10 @@
 """FRP Python Wrapper - A self-hostable tunneling solution."""
 
 # High-level API
+from . import (
+    core,  # For test access to core.client, core.config, etc.
+    tunnels,  # For test access to tunnels.manager, etc.
+)
 from .api import create_tcp_tunnel, create_tunnel
 
 # Common utilities
@@ -22,11 +26,9 @@ from .common.utils import (
 # Core functionality
 from .core.client import FRPClient
 from .core.config import ConfigBuilder
-from . import core  # For test access to core.client, core.config, etc.
 
 # Tunnel management
 from .tunnels.manager import TunnelManager
-from . import tunnels  # For test access to tunnels.manager, etc.
 from .tunnels.models import (
     BaseTunnel,
     HTTPTunnel,
@@ -82,7 +84,7 @@ __all__ = [
     "core",
     "tunnels",
     "client",
-    "config", 
+    "config",
     "tunnel_manager",
     "tunnel_process",
 ]
