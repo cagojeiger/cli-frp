@@ -2,8 +2,12 @@ import pytest
 from pydantic import ValidationError
 
 from frp_wrapper.common.context_config import (
-    ContextConfig, TunnelGroupConfig, ResourceTracker, CleanupStrategy
+    CleanupStrategy,
+    ContextConfig,
+    ResourceTracker,
+    TunnelGroupConfig,
 )
+
 
 class TestContextConfig:
     def test_context_config_creation_with_defaults(self):
@@ -27,7 +31,9 @@ class TestContextConfig:
         with pytest.raises(ValidationError, match="less than or equal to 1000"):
             ContextConfig(max_tracked_resources=1001)
 
-        with pytest.raises(ValidationError, match="Input should be greater than or equal to 0.1"):
+        with pytest.raises(
+            ValidationError, match="Input should be greater than or equal to 0.1"
+        ):
             ContextConfig(cleanup_timeout=0.0)
 
     def test_context_config_custom_values(self):
@@ -37,7 +43,7 @@ class TestContextConfig:
             cleanup_timeout=8.0,
             cleanup_strategy=CleanupStrategy.FORCE,
             suppress_cleanup_errors=False,
-            max_tracked_resources=50
+            max_tracked_resources=50,
         )
 
         assert config.connect_timeout == 15.0
@@ -45,6 +51,7 @@ class TestContextConfig:
         assert config.cleanup_strategy == CleanupStrategy.FORCE
         assert config.suppress_cleanup_errors is False
         assert config.max_tracked_resources == 50
+
 
 class TestTunnelGroupConfig:
     def test_tunnel_group_config_creation_with_defaults(self):
@@ -75,13 +82,14 @@ class TestTunnelGroupConfig:
             group_name="custom_group",
             max_tunnels=20,
             parallel_cleanup=False,
-            cleanup_order="fifo"
+            cleanup_order="fifo",
         )
 
         assert config.group_name == "custom_group"
         assert config.max_tunnels == 20
         assert config.parallel_cleanup is False
         assert config.cleanup_order == "fifo"
+
 
 class TestResourceTracker:
     def test_resource_tracker_creation(self):
@@ -123,6 +131,7 @@ class TestResourceTracker:
         def make_cleanup(resource_id):
             def cleanup():
                 cleanup_calls.append(resource_id)
+
             return cleanup
 
         tracker.register_resource("res1", "resource1", make_cleanup("res1"))
