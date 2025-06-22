@@ -204,3 +204,4 @@ A: FRP 네이티브 성능과 동일합니다. Python 래퍼는 설정과 프로
 - [Checkpoint 2: Basic Client](checkpoint-02-basic-client.md)
 - [Checkpoint 3: Tunnel Management](checkpoint-03-tunnel-management.md)
 - [Checkpoint 4: Path-based Routing](checkpoint-04-path-routing.md)
+- [Checkpoint 5: Context Manager](checkpoint-05-context-manager.md)
