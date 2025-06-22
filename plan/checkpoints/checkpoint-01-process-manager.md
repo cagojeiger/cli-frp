@@ -16,8 +16,8 @@ TDD를 적용하여 FRP 바이너리 프로세스를 관리하는 간단하고 �
 # tests/test_process.py
 import pytest
 from unittest.mock import Mock, patch
-from frp_wrapper.process import ProcessManager
-from frp_wrapper.exceptions import ProcessError, BinaryNotFoundError
+from frp_wrapper.core.process import ProcessManager
+from frp_wrapper.common.exceptions import ProcessError, BinaryNotFoundError
 
 class TestProcessManager:
     def test_process_manager_requires_binary_path(self):
@@ -40,13 +40,13 @@ class TestProcessManager:
 ### 2. ProcessManager Class (Test-Driven)
 
 ```python
-# src/frp_wrapper/process.py
+# src/frp_wrapper/core/process.py
 import subprocess
 import threading
 import time
 from pathlib import Path
 from typing import Optional, Callable
-from .exceptions import ProcessError, BinaryNotFoundError
+from ..common.exceptions import ProcessError, BinaryNotFoundError
 
 class ProcessManager:
     """Manages FRP binary process lifecycle"""
@@ -113,8 +113,8 @@ import pytest
 import tempfile
 import os
 from unittest.mock import Mock, patch, MagicMock
-from frp_wrapper.process import ProcessManager
-from frp_wrapper.exceptions import ProcessError, BinaryNotFoundError
+from frp_wrapper.core.process import ProcessManager
+from frp_wrapper.common.exceptions import ProcessError, BinaryNotFoundError
 
 class TestProcessManager:
 
@@ -364,8 +364,12 @@ class TestProcessManagerIntegration:
 ```
 src/frp_wrapper/
 ├── __init__.py
-├── process.py          # ProcessManager class
-└── exceptions.py       # ProcessError, BinaryNotFoundError
+├── core/
+│   ├── __init__.py
+│   └── process.py      # ProcessManager class
+└── common/
+    ├── __init__.py
+    └── exceptions.py   # ProcessError, BinaryNotFoundError
 
 tests/
 ├── __init__.py

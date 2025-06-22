@@ -103,12 +103,12 @@ Result = Union[Ok[T], Err[E]]
 ### 2. 이벤트 시스템
 
 ```python
-# src/domain/events.py
+# src/frp_wrapper/events.py (향후 구현 예정)
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
-from src.domain.tunnel import TunnelId
-from src.domain.process import ProcessId
+from src.frp_wrapper.tunnels.models import TunnelId
+from src.frp_wrapper.core.process import ProcessId
 
 @dataclass
 class DomainEvent:
@@ -145,7 +145,7 @@ class ProcessStopped(DomainEvent):
 ### 3. 순수 함수 레이어
 
 ```python
-# src/core/tunnel_operations.py
+# src/frp_wrapper/tunnels/operations.py (향후 구현 예정)
 from typing import List, Tuple
 from src.domain.tunnel import Tunnel, HTTPTunnel, TunnelId, Port, Path
 from src.domain.events import TunnelCreated, TunnelConnected

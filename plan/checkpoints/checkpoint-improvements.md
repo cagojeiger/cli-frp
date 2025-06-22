@@ -27,7 +27,7 @@
 
 #### ConfigBuilder Class (New - Required)
 ```python
-# src/frp_wrapper/config.py
+# src/frp_wrapper/core/config.py
 class ConfigBuilder:
     """Builds FRP configuration files with validation"""
 

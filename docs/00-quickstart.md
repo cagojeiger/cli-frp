@@ -15,29 +15,39 @@ pip install frp-wrapper
 로컬에서 개발 중인 웹앱을 즉시 공유할 수 있습니다:
 
 ```python
-from frp_wrapper import FRPClient
+from frp_wrapper import create_tunnel
 
 # 로컬 서비스(포트 3000)를 인터넷에 공개
-client = FRPClient("your-server.com", auth_token="your-token")
-client.connect()
-
-tunnel = client.expose_path(3000, "myapp")
-print(f"🌐 공개 URL: {tunnel.url}")
+url = create_tunnel("your-server.com", 3000, "/myapp")
+print(f"🌐 공개 URL: {url}")
 # 출력: https://your-server.com/myapp/
 
 input("종료하려면 Enter...")
-tunnel.close()
-client.disconnect()
 ```
 
-### Context Manager로 더 간단하게
+### 고급 사용법: FRPClient 직접 사용
+
+더 많은 제어가 필요한 경우 FRPClient를 직접 사용할 수 있습니다:
 
 ```python
-from frp_wrapper import FRPClient
+from frp_wrapper import FRPClient, TunnelManager, TunnelConfig
 
-with FRPClient("your-server.com", auth_token="your-token") as client:
-    tunnel = client.expose_path(3000, "myapp")
-    print(f"🔗 URL: {tunnel.url}")
+# 설정 생성
+config = TunnelConfig(
+    server_host="your-server.com",
+    auth_token="your-token",
+    default_domain="your-server.com"
+)
+
+# 터널 매니저로 관리
+with TunnelManager(config) as manager:
+    tunnel = manager.create_http_tunnel(
+        tunnel_id="myapp",
+        local_port=3000,
+        path="/myapp"
+    )
+    manager.start_tunnel(tunnel.id)
+    print(f"🔗 URL: https://your-server.com/myapp/")
     input("종료하려면 Enter...")
 # 자동으로 모든 리소스 정리됨
 ```
@@ -47,22 +57,31 @@ with FRPClient("your-server.com", auth_token="your-token") as client:
 개발, 스테이징, API 서버를 한번에 공개:
 
 ```python
-from frp_wrapper import FRPClient
+from frp_wrapper import TunnelManager, TunnelConfig
 
-with FRPClient("your-server.com") as client:
+config = TunnelConfig(
+    server_host="your-server.com",
+    auth_token="your-token",
+    default_domain="your-server.com"
+)
+
+with TunnelManager(config) as manager:
     # 프론트엔드 (React/Vue 등)
-    frontend = client.expose_path(3000, "app")
+    frontend = manager.create_http_tunnel("frontend", 3000, "/app")
+    manager.start_tunnel(frontend.id)
 
     # API 서버
-    api = client.expose_path(8000, "api")
+    api = manager.create_http_tunnel("api", 8000, "/api")
+    manager.start_tunnel(api.id)
 
     # 관리자 패널
-    admin = client.expose_path(8080, "admin")
+    admin = manager.create_http_tunnel("admin", 8080, "/admin")
+    manager.start_tunnel(admin.id)
 
     print("🚀 서비스가 공개되었습니다:")
-    print(f"   Frontend: {frontend.url}")
-    print(f"   API:      {api.url}")
-    print(f"   Admin:    {admin.url}")
+    print(f"   Frontend: https://your-server.com/app/")
+    print(f"   API:      https://your-server.com/api/")
+    print(f"   Admin:    https://your-server.com/admin/")
 
     input("모든 서비스를 종료하려면 Enter...")
 ```
@@ -75,19 +94,18 @@ React 앱을 동료나 클라이언트와 즉시 공유:
 
 ```python
 # dev_share.py
-from frp_wrapper import FRPClient
+from frp_wrapper import create_tunnel
 
-with FRPClient("demo.yourcompany.com") as client:
-    # React 개발 서버
-    app = client.expose_path(3000, "demo")
-    print(f"🎨 데모 사이트: {app.url}")
+# React 개발 서버
+app_url = create_tunnel("demo.yourcompany.com", 3000, "/demo")
+print(f"🎨 데모 사이트: {app_url}")
 
-    # Storybook 컴포넌트 라이브러리
-    storybook = client.expose_path(6006, "storybook")
-    print(f"📚 컴포넌트: {storybook.url}")
+# Storybook 컴포넌트 라이브러리
+storybook_url = create_tunnel("demo.yourcompany.com", 6006, "/storybook")
+print(f"📚 컴포넌트: {storybook_url}")
 
-    print("\n✨ 팀과 링크를 공유하세요!")
-    input("개발이 끝나면 Enter...")
+print("\n✨ 팀과 링크를 공유하세요!")
+input("개발이 끝나면 Enter...")
 ```
 
 ### API 개발자 시나리오
@@ -96,19 +114,18 @@ FastAPI 개발 서버를 팀과 공유:
 
 ```python
 # api_share.py
-from frp_wrapper import FRPClient
+from frp_wrapper import create_tunnel, create_tcp_tunnel
 
-with FRPClient("api.yourcompany.com") as client:
-    # FastAPI 개발 서버
-    api = client.expose_path(8000, "v1")
-    print(f"🔌 API 엔드포인트: {api.url}")
-    print(f"📖 API 문서: {api.url}docs")
+# FastAPI 개발 서버
+api_url = create_tunnel("api.yourcompany.com", 8000, "/v1")
+print(f"🔌 API 엔드포인트: {api_url}")
+print(f"📖 API 문서: {api_url}docs")
 
-    # PostgreSQL 개발 DB (TCP)
-    db = client.expose_tcp(5432)
-    print(f"🗄️  DB 연결: {db.endpoint}")
+# PostgreSQL 개발 DB (TCP)
+db_endpoint = create_tcp_tunnel("api.yourcompany.com", 5432)
+print(f"🗄️  DB 연결: {db_endpoint}")
 
-    input("개발 완료 후 Enter...")
+input("개발 완료 후 Enter...")
 ```
 
 ### TCP 서비스 공유
@@ -116,22 +133,21 @@ with FRPClient("api.yourcompany.com") as client:
 데이터베이스나 SSH 서버 공유:
 
 ```python
-from frp_wrapper import FRPClient
+from frp_wrapper import create_tcp_tunnel
 
-with FRPClient("your-server.com") as client:
-    # PostgreSQL
-    postgres = client.expose_tcp(5432)
-    print(f"🐘 PostgreSQL: {postgres.endpoint}")
+# PostgreSQL
+postgres = create_tcp_tunnel("your-server.com", 5432)
+print(f"🐘 PostgreSQL: {postgres}")
 
-    # Redis
-    redis = client.expose_tcp(6379)
-    print(f"🔴 Redis: {redis.endpoint}")
+# Redis
+redis = create_tcp_tunnel("your-server.com", 6379)
+print(f"🔴 Redis: {redis}")
 
-    # SSH 서버
-    ssh = client.expose_tcp(22)
-    print(f"🔐 SSH: {ssh.endpoint}")
+# SSH 서버
+ssh = create_tcp_tunnel("your-server.com", 22, remote_port=2222)
+print(f"🔐 SSH: {ssh}")
 
-    input("서비스 종료하려면 Enter...")
+input("서비스 종료하려면 Enter...")
 ```
 
 ## CLI로 더 빠르게
@@ -175,10 +191,16 @@ tunnels:
 ```
 
 ```python
-from frp_wrapper import load_config
+# 설정 파일 기반 터널 관리는 향후 지원 예정
+# 현재는 Python 코드로 직접 관리
+from frp_wrapper import TunnelManager, TunnelConfig
 
-config = load_config("tunnels.yaml")
-config.start_all()  # 모든 터널 시작
+config = TunnelConfig(
+    server_host="your-server.com",
+    auth_token="your-secret-token"
+)
+manager = TunnelManager(config)
+# 터널 생성 및 관리...
 ```
 
 ## 다음 단계

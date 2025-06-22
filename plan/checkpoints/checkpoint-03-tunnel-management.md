@@ -14,7 +14,7 @@ TDD와 Pydantic v2를 활용하여 간단하고 타입 안전한 터널 관리 �
 
 ### 1. Pydantic Models
 ```python
-# src/frp_wrapper/tunnel.py
+# src/frp_wrapper/tunnels/models.py
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
@@ -147,7 +147,7 @@ class TunnelConfig(BaseModel):
 import pytest
 from datetime import datetime
 from pydantic import ValidationError
-from frp_wrapper.tunnel import BaseTunnel, TCPTunnel, HTTPTunnel, TunnelStatus, TunnelType, TunnelConfig
+from frp_wrapper.tunnels.models import BaseTunnel, TCPTunnel, HTTPTunnel, TunnelStatus, TunnelType, TunnelConfig
 
 class TestBaseTunnel:
     def test_tunnel_creation_with_valid_data(self):
@@ -387,11 +387,11 @@ class TestTunnelSerialization:
 
 ### 3. Tunnel Manager with Pydantic
 ```python
-# src/frp_wrapper/tunnel_manager.py
+# src/frp_wrapper/tunnels/manager.py
 from typing import Dict, List, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
-from .tunnel import BaseTunnel, TCPTunnel, HTTPTunnel, TunnelStatus, TunnelConfig
-from .exceptions import TunnelError, TunnelNotFoundError
+from .models import BaseTunnel, TCPTunnel, HTTPTunnel, TunnelStatus, TunnelConfig
+from ..common.exceptions import TunnelError, TunnelNotFoundError
 
 class TunnelRegistry(BaseModel):
     """Pydantic model for managing tunnel registry"""
@@ -533,18 +533,28 @@ class TunnelManager:
 ```
 src/frp_wrapper/
 ├── __init__.py
-├── tunnel.py           # Pydantic tunnel models
-├── tunnel_manager.py   # TunnelManager with Pydantic
-├── client.py           # FRPClient (from checkpoint 2)
-├── process.py          # ProcessManager (from checkpoint 1)
-├── config.py           # ConfigBuilder with Pydantic
-└── exceptions.py       # Custom exceptions
+├── api.py              # High-level API functions
+├── core/
+│   ├── __init__.py
+│   ├── client.py       # FRPClient (from checkpoint 2)
+│   ├── process.py      # ProcessManager (from checkpoint 1)
+│   └── config.py       # ConfigBuilder with Pydantic
+├── tunnels/
+│   ├── __init__.py
+│   ├── models.py       # Pydantic tunnel models (formerly tunnel.py)
+│   ├── manager.py      # TunnelManager with Pydantic
+│   └── process.py      # TunnelProcessManager
+└── common/
+    ├── __init__.py
+    ├── exceptions.py   # Custom exceptions
+    ├── logging.py      # Logging setup
+    └── utils.py        # Utility functions
 
 tests/
 ├── __init__.py
-├── test_tunnel.py      # Pydantic model tests
-├── test_tunnel_manager.py  # Manager tests
-└── test_tunnel_integration.py  # Integration tests
+├── test_tunnel_models.py      # Pydantic model tests
+├── test_tunnel_manager.py     # Manager tests
+└── test_tunnel_integration.py # Integration tests
 ```
 
 ## Success Criteria

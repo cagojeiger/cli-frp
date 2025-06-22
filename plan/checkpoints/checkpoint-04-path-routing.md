@@ -14,13 +14,13 @@ TDD와 Pydantic v2를 활용하여 FRP의 네이티브 `locations` 기능을 사
 
 ### 1. Enhanced HTTP Tunnel Models
 ```python
-# src/frp_wrapper/http_tunnel.py
+# src/frp_wrapper/tunnels/http_tunnel.py (향후 확장)
 from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 from pydantic import HttpUrl, AnyHttpUrl
-from .tunnel import BaseTunnel, TunnelType, TunnelStatus
+from .models import BaseTunnel, TunnelType, TunnelStatus
 
 class PathRewriteMode(str, Enum):
     """Path rewrite modes for HTTP tunnels"""
@@ -265,11 +265,11 @@ class RoutingTable(BaseModel):
 # tests/test_http_tunnel.py
 import pytest
 from pydantic import ValidationError
-from frp_wrapper.http_tunnel import (
+from frp_wrapper.tunnels.http_tunnel import (
     HTTPTunnelConfig, AdvancedHTTPTunnel, HTTPHeaders,
     PathRewriteMode, PathMatcher, RoutingTable
 )
-from frp_wrapper.tunnel import TunnelType, TunnelStatus
+from frp_wrapper.tunnels.models import TunnelType, TunnelStatus
 
 class TestHTTPTunnelConfig:
     def test_config_creation_with_valid_data(self):
@@ -641,13 +641,21 @@ class TestFRPIntegration:
 ```
 src/frp_wrapper/
 ├── __init__.py
-├── tunnel.py           # Base tunnel models
-├── http_tunnel.py      # Advanced HTTP tunnel models
-├── tunnel_manager.py   # Enhanced with path routing
-├── client.py           # FRPClient with expose_path
-├── process.py          # ProcessManager
-├── config.py           # ConfigBuilder with Pydantic
-└── exceptions.py       # Custom exceptions
+├── core/
+│   ├── __init__.py
+│   ├── client.py       # FRPClient with expose_path
+│   ├── process.py      # ProcessManager
+│   └── config.py       # ConfigBuilder with Pydantic
+├── tunnels/
+│   ├── __init__.py
+│   ├── models.py       # Base tunnel models
+│   ├── http_tunnel.py  # Advanced HTTP tunnel models
+│   ├── manager.py      # Enhanced with path routing
+│   └── routing.py      # Path routing logic
+└── common/
+    ├── __init__.py
+    ├── exceptions.py   # Custom exceptions
+    └── utils.py        # Utility functions
 
 tests/
 ├── __init__.py

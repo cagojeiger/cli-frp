@@ -15,7 +15,7 @@ TDD와 Pydantic v2를 활용하여 안전하고 직관적인 Context Manager를 
 ### 1. Context Manager Configuration Models
 
 ```python
-# src/frp_wrapper/context_config.py
+# src/frp_wrapper/common/context_config.py
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, List, Dict, Any, Callable
@@ -129,12 +129,12 @@ from unittest.mock import Mock, patch, MagicMock
 from contextlib import contextmanager
 from pydantic import ValidationError
 
-from frp_wrapper.context_config import (
+from frp_wrapper.common.context_config import (
     ContextConfig, TunnelGroupConfig, ResourceTracker, CleanupStrategy
 )
-from frp_wrapper.client import FRPClient
-from frp_wrapper.tunnel import HTTPTunnel, TCPTunnel, TunnelStatus
-from frp_wrapper.exceptions import TunnelError, ConnectionError
+from frp_wrapper.core.client import FRPClient
+from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel, TunnelStatus
+from frp_wrapper.common.exceptions import TunnelError, ConnectionError
 
 class TestContextConfig:
     def test_context_config_creation_with_defaults(self):
@@ -480,7 +480,7 @@ class TestAdvancedContextFeatures:
 ### 3. Context Manager Implementation
 
 ```python
-# src/frp_wrapper/context.py
+# src/frp_wrapper/common/context.py
 import asyncio
 import logging
 import threading
@@ -736,11 +736,20 @@ class ContextManagerMixin:
 ```
 src/frp_wrapper/
 ├── __init__.py
-├── context_config.py     # Pydantic configuration models
-├── context.py           # Context manager implementations
-├── client.py            # Enhanced with ContextManagerMixin
-├── tunnel.py            # Enhanced with context manager
-└── exceptions.py        # Context-related exceptions
+├── core/
+│   ├── __init__.py
+│   ├── client.py        # Enhanced with ContextManagerMixin
+│   ├── process.py       # ProcessManager
+│   └── config.py        # ConfigBuilder
+├── tunnels/
+│   ├── __init__.py
+│   ├── models.py        # Enhanced with context manager
+│   └── manager.py       # TunnelManager
+└── common/
+    ├── __init__.py
+    ├── context_config.py # Pydantic configuration models
+    ├── context.py       # Context manager implementations
+    └── exceptions.py    # Context-related exceptions
 
 tests/
 ├── __init__.py

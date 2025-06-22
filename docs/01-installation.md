@@ -86,16 +86,18 @@ docker run -it --rm my-frp-app
 
 FRP Python Wrapper는 FRP 바이너리가 필요합니다. 자동으로 다운로드하거나 수동으로 설치할 수 있습니다.
 
-### 자동 설치
+### 자동 검색
+
+FRP Python Wrapper는 시스템에 설치된 FRP 바이너리를 자동으로 찾습니다:
 
 ```python
-from frp_wrapper import ensure_frp_installed
+from frp_wrapper import FRPClient
 
-# 최신 버전 자동 다운로드 및 설치
-ensure_frp_installed()
+# FRPClient가 자동으로 frpc 바이너리를 찾습니다
+client = FRPClient("your-server.com")
 
-# 특정 버전 설치
-ensure_frp_installed(version="0.51.0")
+# 또는 직접 경로 지정
+client = FRPClient("your-server.com", frp_path="/usr/local/bin/frpc")
 ```
 
 ### 수동 설치
@@ -171,19 +173,15 @@ frpc --version
 
 ### 테스트 실행
 ```python
-from frp_wrapper import FRPClient, find_frpc_binary
-
-# 바이너리 찾기
-try:
-    binary_path = find_frpc_binary()
-    print(f"FRP 바이너리 위치: {binary_path}")
-except BinaryNotFoundError:
-    print("FRP 바이너리를 찾을 수 없습니다. 설치가 필요합니다.")
+from frp_wrapper import FRPClient, BinaryNotFoundError
 
 # 클라이언트 생성 테스트
 try:
     client = FRPClient("test.example.com")
     print("클라이언트 생성 성공!")
+    print(f"FRP 바이너리 위치: {client._frp_path}")
+except BinaryNotFoundError:
+    print("FRP 바이너리를 찾을 수 없습니다. 설치가 필요합니다.")
 except Exception as e:
     print(f"오류: {e}")
 ```
@@ -343,15 +341,13 @@ pip install --upgrade frp-wrapper
 pip install --upgrade frp-wrapper==1.2.0
 ```
 
-### 마이그레이션 가이드
+### 버전 확인
 ```python
 # 버전 확인
 import frp_wrapper
 print(f"현재 버전: {frp_wrapper.__version__}")
 
-# 마이그레이션 스크립트 실행 (필요한 경우)
-from frp_wrapper.migration import migrate
-migrate(from_version="0.9.0", to_version="1.0.0")
+# 변경사항은 CHANGELOG.md 참조
 ```
 
 ## 제거
