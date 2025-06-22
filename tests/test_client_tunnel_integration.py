@@ -13,10 +13,13 @@ class TestFRPClientExposePathIntegration:
     @pytest.fixture
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
-        with patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find:
+        with (
+            patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find,
+            patch("frp_wrapper.client.TunnelManager") as mock_tunnel_manager,
+        ):
             mock_find.return_value = "/usr/local/bin/frpc"
+            mock_tunnel_manager.return_value = Mock(spec=TunnelManager)
             client = FRPClient("test.example.com", auth_token="test-token")
-            client.tunnel_manager = Mock(spec=TunnelManager)
             return client
 
     def test_expose_path_creates_http_tunnel(self, mock_client):
@@ -196,10 +199,13 @@ class TestFRPClientExposeTCPIntegration:
     @pytest.fixture
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
-        with patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find:
+        with (
+            patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find,
+            patch("frp_wrapper.client.TunnelManager") as mock_tunnel_manager,
+        ):
             mock_find.return_value = "/usr/local/bin/frpc"
+            mock_tunnel_manager.return_value = Mock(spec=TunnelManager)
             client = FRPClient("test.example.com", auth_token="test-token")
-            client.tunnel_manager = Mock(spec=TunnelManager)
             return client
 
     def test_expose_tcp_creates_tcp_tunnel(self, mock_client):
@@ -328,10 +334,13 @@ class TestFRPClientTunnelLifecycleIntegration:
     @pytest.fixture
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
-        with patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find:
+        with (
+            patch("frp_wrapper.client.FRPClient.find_frp_binary") as mock_find,
+            patch("frp_wrapper.client.TunnelManager") as mock_tunnel_manager,
+        ):
             mock_find.return_value = "/usr/local/bin/frpc"
+            mock_tunnel_manager.return_value = Mock(spec=TunnelManager)
             client = FRPClient("test.example.com", auth_token="test-token")
-            client.tunnel_manager = Mock(spec=TunnelManager)
             return client
 
     def test_client_tunnel_manager_integration(self, mock_client):

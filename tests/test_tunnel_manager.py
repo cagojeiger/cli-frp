@@ -291,9 +291,13 @@ class TestTunnelManager:
 
     def test_tunnel_manager_start_tunnel(self):
         """Test starting tunnel through manager."""
+        from frp_wrapper.tunnel import TunnelConfig
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         manager.create_http_tunnel(
             tunnel_id="start-test", local_port=3000, path="myapp"
         )
@@ -311,7 +315,10 @@ class TestTunnelManager:
         """Test that starting non-existent tunnel raises error."""
         from frp_wrapper.tunnel_manager import TunnelManager, TunnelManagerError
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
 
         with pytest.raises(TunnelManagerError, match="not found"):
             manager.start_tunnel("nonexistent")
@@ -320,7 +327,10 @@ class TestTunnelManager:
         """Test stopping tunnel through manager."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         manager.create_tcp_tunnel(tunnel_id="stop-test", local_port=3000)
 
         with patch.object(manager, "_start_frp_process") as mock_start:
@@ -340,7 +350,10 @@ class TestTunnelManager:
         """Test removing tunnel through manager."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         manager.create_http_tunnel(
             tunnel_id="remove-test", local_port=3000, path="myapp"
         )
@@ -355,7 +368,10 @@ class TestTunnelManager:
         """Test listing only active tunnels."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         manager.create_http_tunnel("active-1", 3000, "app1")
         manager.create_http_tunnel("inactive-1", 4000, "app2")
 
@@ -372,7 +388,10 @@ class TestTunnelManager:
         """Test getting detailed tunnel information."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         manager.create_http_tunnel(
             tunnel_id="info-test",
             local_port=3000,
@@ -392,7 +411,10 @@ class TestTunnelManager:
         """Test shutting down all active tunnels."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         manager.create_http_tunnel("shutdown-1", 3000, "app1")
         manager.create_tcp_tunnel("shutdown-2", 4000)
 
@@ -414,7 +436,10 @@ class TestTunnelManager:
         """Test that manager properly integrates with registry."""
         from frp_wrapper.tunnel_manager import TunnelManager
 
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
 
         tunnel = manager.create_http_tunnel("integration-test", 3000, "myapp")
 

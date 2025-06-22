@@ -62,9 +62,14 @@ class FRPClient:
         self._config_builder: ConfigBuilder | None = None
         self._connected = False
         tunnel_config = TunnelConfig(
-            server_host=self.server, auth_token=self.auth_token, max_tunnels=10
+            server_host=self.server,
+            auth_token=self.auth_token,
+            default_domain=None,
+            max_tunnels=10,
         )
-        self.tunnel_manager = TunnelManager(tunnel_config)
+        self.tunnel_manager = TunnelManager(
+            tunnel_config, frp_binary_path=self.binary_path
+        )
 
         logger.info(
             "FRPClient initialized",

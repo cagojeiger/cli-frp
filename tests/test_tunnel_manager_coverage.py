@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from frp_wrapper.tunnel import HTTPTunnel, TCPTunnel, TunnelStatus
+from frp_wrapper.tunnel import HTTPTunnel, TCPTunnel, TunnelConfig, TunnelStatus
 from frp_wrapper.tunnel_manager import (
     TunnelManager,
     TunnelManagerError,
@@ -69,7 +69,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_start_tunnel_already_connected(self):
         """Test starting a tunnel that's already connected."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = HTTPTunnel(
             id="test", local_port=3000, path="app", status=TunnelStatus.CONNECTED
         )
@@ -80,7 +83,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_start_tunnel_process_failure(self):
         """Test start_tunnel when FRP process fails to start."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = HTTPTunnel(id="test", local_port=3000, path="app")
         manager.registry.add_tunnel(tunnel)
 
@@ -93,7 +99,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_start_tunnel_process_exception(self):
         """Test start_tunnel when FRP process raises exception."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = HTTPTunnel(id="test", local_port=3000, path="app")
         manager.registry.add_tunnel(tunnel)
 
@@ -110,7 +119,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_stop_tunnel_not_connected(self):
         """Test stopping a tunnel that's not connected."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = HTTPTunnel(
             id="test", local_port=3000, path="app", status=TunnelStatus.PENDING
         )
@@ -121,7 +133,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_stop_tunnel_process_failure(self):
         """Test stop_tunnel when FRP process fails to stop."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = HTTPTunnel(
             id="test", local_port=3000, path="app", status=TunnelStatus.CONNECTED
         )
@@ -133,7 +148,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_stop_tunnel_process_exception(self):
         """Test stop_tunnel when FRP process raises exception."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = HTTPTunnel(
             id="test", local_port=3000, path="app", status=TunnelStatus.CONNECTED
         )
@@ -149,7 +167,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_remove_tunnel_with_connected_status(self):
         """Test removing a tunnel that's currently connected."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = HTTPTunnel(
             id="test", local_port=3000, path="app", status=TunnelStatus.CONNECTED
         )
@@ -165,7 +186,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_remove_tunnel_with_process_handle(self):
         """Test removing tunnel cleans up process handle."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = HTTPTunnel(id="test", local_port=3000, path="app")
         manager.registry.add_tunnel(tunnel)
         manager._processes["test"] = Mock()  # Simulate process handle
@@ -177,7 +201,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_get_tunnel_info_tcp_tunnel(self):
         """Test get_tunnel_info for TCP tunnel type."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
         tunnel = TCPTunnel(
             id="test", local_port=3000, remote_port=8080, status=TunnelStatus.CONNECTED
         )
@@ -192,7 +219,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_shutdown_all_with_errors(self):
         """Test shutdown_all when some tunnels fail to stop."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
 
         tunnel1 = HTTPTunnel(
             id="tunnel1", local_port=3000, path="app1", status=TunnelStatus.CONNECTED
@@ -216,7 +246,10 @@ class TestTunnelManagerErrorPaths:
 
     def test_shutdown_all_stop_returns_false(self):
         """Test shutdown_all when stop_tunnel returns False."""
-        manager = TunnelManager()
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
 
         tunnel = HTTPTunnel(
             id="test", local_port=3000, path="app", status=TunnelStatus.CONNECTED
