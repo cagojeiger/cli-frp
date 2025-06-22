@@ -24,3 +24,8 @@ class ConfigurationError(FRPWrapperError):
 class ConnectionError(FRPWrapperError):
     """Raised when connection to FRP server fails."""
     pass
+
+
+class AuthenticationError(FRPWrapperError):
+    """Raised when authentication with FRP server fails."""
+    pass
