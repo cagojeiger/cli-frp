@@ -5,6 +5,110 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 
 from frp_wrapper import managed_tcp_tunnel, managed_tunnel
+from frp_wrapper.api import create_tcp_tunnel, create_tunnel
+
+
+class TestCreateTunnel:
+    """Test create_tunnel function."""
+
+    @patch('frp_wrapper.api.TunnelManager')
+    def test_create_tunnel_basic(self, mock_tunnel_manager_class):
+        """Test basic tunnel creation."""
+        mock_manager = Mock()
+        mock_tunnel_manager_class.return_value = mock_manager
+
+        mock_tunnel = Mock()
+        mock_tunnel.id = "tunnel-3000-myapp"
+        mock_manager.create_http_tunnel.return_value = mock_tunnel
+        mock_manager.start_tunnel.return_value = True
+
+        result = create_tunnel("example.com", 3000, "/myapp")
+
+        assert result == "https://example.com/myapp/"
+        mock_manager.create_http_tunnel.assert_called_once()
+        mock_manager.start_tunnel.assert_called_once_with("tunnel-3000-myapp")
+
+    @patch('frp_wrapper.api.TunnelManager')
+    def test_create_tunnel_with_custom_domain(self, mock_tunnel_manager_class):
+        """Test tunnel creation with custom domain."""
+        mock_manager = Mock()
+        mock_tunnel_manager_class.return_value = mock_manager
+
+        mock_tunnel = Mock()
+        mock_tunnel.id = "tunnel-3000-myapp"
+        mock_manager.create_http_tunnel.return_value = mock_tunnel
+        mock_manager.start_tunnel.return_value = True
+
+        result = create_tunnel("server.com", 3000, "/myapp", domain="custom.com")
+
+        assert result == "https://custom.com/myapp/"
+
+    @patch('frp_wrapper.api.TunnelManager')
+    def test_create_tunnel_start_failure(self, mock_tunnel_manager_class):
+        """Test tunnel creation when start fails."""
+        mock_manager = Mock()
+        mock_tunnel_manager_class.return_value = mock_manager
+
+        mock_tunnel = Mock()
+        mock_tunnel.id = "tunnel-3000-myapp"
+        mock_manager.create_http_tunnel.return_value = mock_tunnel
+        mock_manager.start_tunnel.return_value = False
+
+        with pytest.raises(RuntimeError, match="Failed to start tunnel for /myapp"):
+            create_tunnel("example.com", 3000, "/myapp")
+
+
+class TestCreateTcpTunnel:
+    """Test create_tcp_tunnel function."""
+
+    @patch('frp_wrapper.api.TunnelManager')
+    def test_create_tcp_tunnel_basic(self, mock_tunnel_manager_class):
+        """Test basic TCP tunnel creation."""
+        mock_manager = Mock()
+        mock_tunnel_manager_class.return_value = mock_manager
+
+        mock_tunnel = Mock()
+        mock_tunnel.id = "tcp-3306-3306"
+        mock_manager.create_tcp_tunnel.return_value = mock_tunnel
+        mock_manager.start_tunnel.return_value = True
+
+        result = create_tcp_tunnel("example.com", 3306)
+
+        assert result == "example.com:3306"
+        mock_manager.create_tcp_tunnel.assert_called_once_with(
+            tunnel_id="tcp-3306-3306",
+            local_port=3306,
+            remote_port=3306
+        )
+
+    @patch('frp_wrapper.api.TunnelManager')
+    def test_create_tcp_tunnel_custom_remote_port(self, mock_tunnel_manager_class):
+        """Test TCP tunnel creation with custom remote port."""
+        mock_manager = Mock()
+        mock_tunnel_manager_class.return_value = mock_manager
+
+        mock_tunnel = Mock()
+        mock_tunnel.id = "tcp-3306-5432"
+        mock_manager.create_tcp_tunnel.return_value = mock_tunnel
+        mock_manager.start_tunnel.return_value = True
+
+        result = create_tcp_tunnel("example.com", 3306, remote_port=5432)
+
+        assert result == "example.com:5432"
+
+    @patch('frp_wrapper.api.TunnelManager')
+    def test_create_tcp_tunnel_start_failure(self, mock_tunnel_manager_class):
+        """Test TCP tunnel creation when start fails."""
+        mock_manager = Mock()
+        mock_tunnel_manager_class.return_value = mock_manager
+
+        mock_tunnel = Mock()
+        mock_tunnel.id = "tcp-3306-3306"
+        mock_manager.create_tcp_tunnel.return_value = mock_tunnel
+        mock_manager.start_tunnel.return_value = False
+
+        with pytest.raises(RuntimeError, match="Failed to start TCP tunnel on port 3306"):
+            create_tcp_tunnel("example.com", 3306)
 
 
 class TestManagedTunnel:
