@@ -5,7 +5,26 @@ from . import (
     core,  # For test access to core.client, core.config, etc.
     tunnels,  # For test access to tunnels.manager, etc.
 )
-from .api import create_tcp_tunnel, create_tunnel
+from .api import (
+    create_tcp_tunnel,
+    create_tunnel,
+    managed_tcp_tunnel,
+    managed_tunnel,
+    tunnel_group_context,
+)
+
+# Context management
+from .common.context import (
+    AsyncProcessManager,
+    NestedContextManager,
+    TimeoutContext,
+    timeout_context,
+)
+from .common.context_config import (
+    CleanupStrategy,
+    ContextConfig,
+    TunnelGroupConfig,
+)
 
 # Common utilities
 from .common.exceptions import (
@@ -26,6 +45,7 @@ from .common.utils import (
 # Core functionality
 from .core.client import FRPClient
 from .core.config import ConfigBuilder
+from .tunnels.group import TunnelGroup, tunnel_group
 
 # Tunnel management
 from .tunnels.manager import TunnelManager
@@ -56,6 +76,9 @@ __all__ = [
     # High-level API
     "create_tunnel",
     "create_tcp_tunnel",
+    "managed_tunnel",
+    "managed_tcp_tunnel",
+    "tunnel_group_context",
     # Core client functionality
     "FRPClient",
     "ConfigBuilder",
@@ -68,6 +91,16 @@ __all__ = [
     "TCPTunnel",
     "TunnelStatus",
     "TunnelType",
+    "TunnelGroup",
+    "tunnel_group",
+    # Context management
+    "NestedContextManager",
+    "TimeoutContext",
+    "timeout_context",
+    "AsyncProcessManager",
+    "ContextConfig",
+    "TunnelGroupConfig",
+    "CleanupStrategy",
     # Exceptions
     "FRPWrapperError",
     "BinaryNotFoundError",

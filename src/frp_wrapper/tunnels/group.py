@@ -4,10 +4,7 @@ from contextlib import contextmanager
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
-from ..common.context_config import (
-    ResourceTracker,
-    TunnelGroupConfig,
-)
+from ..common.context_config import ResourceTracker, TunnelGroupConfig
 from ..common.exceptions import TunnelError
 from .models import BaseTunnel
 
@@ -15,6 +12,8 @@ if TYPE_CHECKING:
     from ..core.client import FRPClient
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["TunnelGroup", "TunnelGroupConfig", "tunnel_group"]
 
 
 class TunnelGroup:
