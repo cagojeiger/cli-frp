@@ -2,8 +2,9 @@
 
 import os
 import shutil
+import time
 from types import TracebackType
-from typing import Literal
+from typing import Any, Literal
 
 from .config import ConfigBuilder
 from .exceptions import (
@@ -14,6 +15,8 @@ from .exceptions import (
 )
 from .logging import get_logger
 from .process import ProcessManager
+from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel
+from .tunnel_manager import TunnelManager
 
 logger = get_logger(__name__)
 
@@ -58,6 +61,7 @@ class FRPClient:
         self._process_manager: ProcessManager | None = None
         self._config_builder: ConfigBuilder | None = None
         self._connected = False
+        self.tunnel_manager = TunnelManager()
 
         logger.info(
             "FRPClient initialized",
@@ -212,3 +216,167 @@ class FRPClient:
         except Exception as e:
             logger.error("Error during context exit", error=str(e))
         return False  # Don't suppress exceptions
+
+    def expose_path(
+        self,
+        local_port: int,
+        path: str,
+        custom_domains: list[str] | None = None,
+        strip_path: bool = True,
+        websocket: bool = True,
+        auto_start: bool = False,
+    ) -> HTTPTunnel:
+        """Expose local HTTP service via path-based routing.
+
+        Args:
+            local_port: Local port to expose
+            path: URL path for routing (without leading slash)
+            custom_domains: Custom domains for tunnel
+            strip_path: Strip path prefix when forwarding
+            websocket: Enable WebSocket support
+            auto_start: Automatically start tunnel if client is connected
+
+        Returns:
+            Created HTTP tunnel
+
+        Raises:
+            ValueError: If port or path is invalid
+            TunnelManagerError: If tunnel creation fails
+        """
+        if not (1 <= local_port <= 65535):
+            raise ValueError("Port must be between 1 and 65535")
+
+        if not path or not path.strip():
+            raise ValueError("Path cannot be empty")
+
+        if path.startswith("/"):
+            raise ValueError(
+                "Path should not start with '/' - it will be added automatically"
+            )
+
+        tunnel_id = f"http-{local_port}-{path}"
+
+        tunnel = self.tunnel_manager.create_http_tunnel(
+            tunnel_id=tunnel_id,
+            local_port=local_port,
+            path=path,
+            custom_domains=custom_domains or [],
+            strip_path=strip_path,
+            websocket=websocket,
+        )
+
+        if auto_start and self._connected:
+            self.tunnel_manager.start_tunnel(tunnel_id)
+
+        logger.info(f"Exposed HTTP path /{path} on port {local_port}")
+        return tunnel
+
+    def expose_tcp(
+        self, local_port: int, remote_port: int | None = None, auto_start: bool = False
+    ) -> TCPTunnel:
+        """Expose local TCP service via port forwarding.
+
+        Args:
+            local_port: Local port to expose
+            remote_port: Remote port (auto-assigned if None)
+            auto_start: Automatically start tunnel if client is connected
+
+        Returns:
+            Created TCP tunnel
+
+        Raises:
+            ValueError: If port is invalid
+            TunnelManagerError: If tunnel creation fails
+        """
+        if not (1 <= local_port <= 65535):
+            raise ValueError("Port must be between 1 and 65535")
+
+        if remote_port is not None and not (1 <= remote_port <= 65535):
+            raise ValueError("Remote port must be between 1 and 65535")
+
+        if remote_port is not None:
+            tunnel_id = f"tcp-{local_port}-{remote_port}"
+        else:
+            tunnel_id = f"tcp-{local_port}-{int(time.time() * 1000) % 10000}"
+
+        tunnel = self.tunnel_manager.create_tcp_tunnel(
+            tunnel_id=tunnel_id, local_port=local_port, remote_port=remote_port
+        )
+
+        if auto_start and self._connected:
+            self.tunnel_manager.start_tunnel(tunnel_id)
+
+        logger.info(f"Exposed TCP port {local_port} -> {remote_port or 'auto'}")
+        return tunnel
+
+    def list_active_tunnels(self) -> list[BaseTunnel]:
+        """List all active (connected) tunnels.
+
+        Returns:
+            List of connected tunnels
+        """
+        return self.tunnel_manager.list_active_tunnels()
+
+    def get_tunnel_info(self, tunnel_id: str) -> dict[str, Any]:
+        """Get detailed information about a tunnel.
+
+        Args:
+            tunnel_id: ID of tunnel to get info for
+
+        Returns:
+            Dictionary with tunnel information
+
+        Raises:
+            TunnelManagerError: If tunnel not found
+        """
+        return self.tunnel_manager.get_tunnel_info(tunnel_id)
+
+    def start_tunnel(self, tunnel_id: str) -> bool:
+        """Start a specific tunnel.
+
+        Args:
+            tunnel_id: ID of tunnel to start
+
+        Returns:
+            True if started successfully
+
+        Raises:
+            TunnelManagerError: If tunnel not found or start fails
+        """
+        return self.tunnel_manager.start_tunnel(tunnel_id)
+
+    def stop_tunnel(self, tunnel_id: str) -> bool:
+        """Stop a specific tunnel.
+
+        Args:
+            tunnel_id: ID of tunnel to stop
+
+        Returns:
+            True if stopped successfully
+
+        Raises:
+            TunnelManagerError: If tunnel not found or stop fails
+        """
+        return self.tunnel_manager.stop_tunnel(tunnel_id)
+
+    def remove_tunnel(self, tunnel_id: str) -> BaseTunnel:
+        """Remove a tunnel from the client.
+
+        Args:
+            tunnel_id: ID of tunnel to remove
+
+        Returns:
+            Removed tunnel
+
+        Raises:
+            TunnelManagerError: If tunnel not found
+        """
+        return self.tunnel_manager.remove_tunnel(tunnel_id)
+
+    def shutdown_all_tunnels(self) -> bool:
+        """Shutdown all active tunnels.
+
+        Returns:
+            True if all tunnels stopped successfully
+        """
+        return self.tunnel_manager.shutdown_all()
