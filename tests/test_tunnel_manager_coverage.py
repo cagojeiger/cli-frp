@@ -260,3 +260,23 @@ class TestTunnelManagerErrorPaths:
             result = manager.shutdown_all()
 
             assert result is False
+
+    def test_stop_tunnel_not_found_error(self):
+        """Test stop_tunnel when tunnel is not found."""
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
+
+        with pytest.raises(TunnelManagerError, match="Tunnel 'nonexistent' not found"):
+            manager.stop_tunnel("nonexistent")
+
+    def test_get_tunnel_info_not_found_error(self):
+        """Test get_tunnel_info when tunnel is not found."""
+        config = TunnelConfig(server_host="test.example.com")
+        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+            mock_which.return_value = "/usr/bin/frpc"
+            manager = TunnelManager(config)
+
+        with pytest.raises(TunnelManagerError, match="Tunnel 'nonexistent' not found"):
+            manager.get_tunnel_info("nonexistent")

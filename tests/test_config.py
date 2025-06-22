@@ -228,4 +228,54 @@ class TestConfigBuilder:
         assert parsed["common"]["server_port"] == 8000
         assert parsed["common"]["token"] == "secret123"
 
-        builder.cleanup()
+    def test_build_exception_cleanup(self):
+        """Test that build() cleans up temp file on exception."""
+        builder = ConfigBuilder()
+        builder.add_server("example.com")
+
+        # Mock tempfile.mkstemp and os.fdopen to simulate exception
+        with (
+            patch("tempfile.mkstemp") as mock_mkstemp,
+            patch("os.fdopen") as mock_fdopen,
+            patch("os.unlink") as mock_unlink,
+        ):
+            # Setup mkstemp to return fake fd and path
+            mock_mkstemp.return_value = (5, "/tmp/test_config.toml")
+
+            # Make fdopen raise exception
+            mock_fdopen.side_effect = Exception("File open error")
+
+            with pytest.raises(Exception, match="File open error"):
+                builder.build()
+
+            # Verify cleanup was attempted
+            mock_unlink.assert_called_once_with("/tmp/test_config.toml")
+
+    def test_build_exception_cleanup_with_oserror(self):
+        """Test build() exception cleanup when temp file deletion also fails."""
+        builder = ConfigBuilder()
+        builder.add_server("example.com")
+
+        # Mock tempfile.mkstemp and os.fdopen to simulate exception
+        # and OSError during cleanup
+        with (
+            patch("tempfile.mkstemp") as mock_mkstemp,
+            patch("os.fdopen") as mock_fdopen,
+            patch("os.unlink") as mock_unlink,
+        ):
+            # Setup mkstemp to return fake fd and path
+            mock_mkstemp.return_value = (5, "/tmp/test_config.toml")
+
+            # Make fdopen raise exception
+            mock_fdopen.side_effect = Exception("File open error")
+
+            # Make unlink() raise OSError during cleanup
+            mock_unlink.side_effect = OSError("Delete failed")
+
+            # Both exceptions should be handled gracefully
+            # The original exception should be re-raised, OSError should be suppressed
+            with pytest.raises(Exception, match="File open error"):
+                builder.build()
+
+            # Verify cleanup was attempted
+            mock_unlink.assert_called_once_with("/tmp/test_config.toml")
