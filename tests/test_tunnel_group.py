@@ -19,7 +19,7 @@ class TestTunnelGroup:
     def mock_http_tunnel(self):
         """Create mock HTTP tunnel"""
         tunnel = Mock(spec=HTTPTunnel)
-        tunnel.tunnel_id = "http-test-123"
+        tunnel.id = "http-test-123"
         tunnel.manager = Mock()
         return tunnel
 
@@ -27,7 +27,7 @@ class TestTunnelGroup:
     def mock_tcp_tunnel(self):
         """Create mock TCP tunnel"""
         tunnel = Mock(spec=TCPTunnel)
-        tunnel.tunnel_id = "tcp-test-456"
+        tunnel.id = "tcp-test-456"
         tunnel.manager = Mock()
         return tunnel
 
@@ -81,8 +81,8 @@ class TestTunnelGroup:
         config = TunnelGroupConfig(group_name="test-group", max_tunnels=2)
         group = TunnelGroup(mock_client, config)
 
-        mock_client.expose_path.return_value = Mock(tunnel_id="tunnel1")
-        mock_client.expose_tcp.return_value = Mock(tunnel_id="tunnel2")
+        mock_client.expose_path.return_value = Mock(id="tunnel1")
+        mock_client.expose_tcp.return_value = Mock(id="tunnel2")
 
         group.add_http_tunnel(3000, "app1")
         group.add_tcp_tunnel(3001)
@@ -95,8 +95,8 @@ class TestTunnelGroup:
         config = TunnelGroupConfig(group_name="test-group", max_tunnels=5)
         group = TunnelGroup(mock_client, config)
 
-        mock_client.expose_path.return_value = Mock(tunnel_id="http1")
-        mock_client.expose_tcp.return_value = Mock(tunnel_id="tcp1")
+        mock_client.expose_path.return_value = Mock(id="http1")
+        mock_client.expose_tcp.return_value = Mock(id="tcp1")
 
         result = (
             group.add_http_tunnel(3000, "app1")
@@ -120,8 +120,8 @@ class TestTunnelGroup:
         result = group.start_all()
 
         assert result is True
-        mock_http_tunnel.manager.start_tunnel.assert_called_once_with("http-test-123")
-        mock_tcp_tunnel.manager.start_tunnel.assert_called_once_with("tcp-test-456")
+        mock_http_tunnel.manager.start_tunnel.assert_called_once_with(mock_http_tunnel.id)
+        mock_tcp_tunnel.manager.start_tunnel.assert_called_once_with(mock_tcp_tunnel.id)
 
     def test_tunnel_group_start_all_with_failures(self, mock_client, mock_http_tunnel):
         """Test starting all tunnels with some failures"""
@@ -139,9 +139,9 @@ class TestTunnelGroup:
         config = TunnelGroupConfig(group_name="test", cleanup_order="lifo")
         group = TunnelGroup(mock_client, config)
 
-        tunnel1 = Mock(tunnel_id="tunnel1", manager=Mock())
-        tunnel2 = Mock(tunnel_id="tunnel2", manager=Mock())
-        tunnel3 = Mock(tunnel_id="tunnel3", manager=Mock())
+        tunnel1 = Mock(id="tunnel1", manager=Mock())
+        tunnel2 = Mock(id="tunnel2", manager=Mock())
+        tunnel3 = Mock(id="tunnel3", manager=Mock())
 
         group.tunnels = [tunnel1, tunnel2, tunnel3]
 
@@ -157,8 +157,8 @@ class TestTunnelGroup:
         config = TunnelGroupConfig(group_name="test", cleanup_order="fifo")
         group = TunnelGroup(mock_client, config)
 
-        tunnel1 = Mock(tunnel_id="tunnel1", manager=Mock())
-        tunnel2 = Mock(tunnel_id="tunnel2", manager=Mock())
+        tunnel1 = Mock(id="tunnel1", manager=Mock())
+        tunnel2 = Mock(id="tunnel2", manager=Mock())
 
         group.tunnels = [tunnel1, tunnel2]
 
@@ -173,11 +173,11 @@ class TestTunnelGroup:
         config = TunnelGroupConfig(group_name="test-group", cleanup_order="lifo")
         group = TunnelGroup(mock_client, config)
 
-        mock_tunnel = Mock(tunnel_id="test-tunnel", manager=Mock())
+        mock_tunnel = Mock(id="test-tunnel", manager=Mock())
         group.tunnels = [mock_tunnel]
 
         group._resource_tracker.register_resource(
-            mock_tunnel.tunnel_id,
+            mock_tunnel.id,
             mock_tunnel,
             lambda: group._cleanup_tunnel(mock_tunnel),
         )
@@ -185,18 +185,18 @@ class TestTunnelGroup:
         with group as ctx:
             assert ctx == group
 
-        mock_tunnel.manager.stop_tunnel.assert_called_once_with("test-tunnel")
-        mock_tunnel.manager.remove_tunnel.assert_called_once_with("test-tunnel")
+        mock_tunnel.manager.stop_tunnel.assert_called_once_with(mock_tunnel.id)
+        mock_tunnel.manager.remove_tunnel.assert_called_once_with(mock_tunnel.id)
 
     def test_tunnel_group_context_manager_with_errors(self, mock_client):
         """Test TunnelGroup context manager with cleanup errors"""
         group = TunnelGroup(mock_client)
 
-        mock_tunnel = Mock(tunnel_id="test-tunnel", manager=Mock())
+        mock_tunnel = Mock(id="test-tunnel", manager=Mock())
         mock_tunnel.manager.stop_tunnel.side_effect = Exception("Cleanup failed")
 
         group._resource_tracker.register_resource(
-            mock_tunnel.tunnel_id,
+            mock_tunnel.id,
             mock_tunnel,
             lambda: group._cleanup_tunnel(mock_tunnel),
         )
@@ -220,20 +220,20 @@ class TestTunnelGroup:
         group = TunnelGroup(mock_client)
 
         mock_tunnel = Mock()
-        mock_tunnel.tunnel_id = "test-tunnel"
+        mock_tunnel.id = "test-tunnel"
         mock_tunnel.manager = Mock()
 
         group._cleanup_tunnel(mock_tunnel)
 
-        mock_tunnel.manager.stop_tunnel.assert_called_once_with("test-tunnel")
-        mock_tunnel.manager.remove_tunnel.assert_called_once_with("test-tunnel")
+        mock_tunnel.manager.stop_tunnel.assert_called_once_with(mock_tunnel.id)
+        mock_tunnel.manager.remove_tunnel.assert_called_once_with(mock_tunnel.id)
 
     def test_cleanup_tunnel_method_no_manager(self, mock_client):
         """Test _cleanup_tunnel method with no manager"""
         group = TunnelGroup(mock_client)
 
         mock_tunnel = Mock()
-        mock_tunnel.tunnel_id = "test-tunnel"
+        mock_tunnel.id = "test-tunnel"
         del mock_tunnel.manager  # Remove manager attribute
 
         group._cleanup_tunnel(mock_tunnel)
@@ -243,7 +243,7 @@ class TestTunnelGroup:
         group = TunnelGroup(mock_client)
 
         mock_tunnel = Mock()
-        mock_tunnel.tunnel_id = "test-tunnel"
+        mock_tunnel.id = "test-tunnel"
         mock_tunnel.manager = Mock()
         mock_tunnel.manager.stop_tunnel.side_effect = Exception("Stop failed")
 
