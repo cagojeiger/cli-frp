@@ -24,8 +24,6 @@ from .process import ProcessManager
 
 if TYPE_CHECKING:
     from ..tunnels.manager import TunnelManager
-else:
-    from ..tunnels.manager import TunnelManager
 
 logger = get_logger(__name__)
 
@@ -72,6 +70,7 @@ class FRPClient:
             default_domain=None,
             max_tunnels=10,
         )
+        from ..tunnels.manager import TunnelManager
         self.tunnel_manager = TunnelManager(
             tunnel_config, frp_binary_path=self.binary_path
         )
