@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 if TYPE_CHECKING:
-    from .manager import TunnelManager
+    from .interfaces import TunnelManagerProtocol
 
 
 class TunnelType(str, Enum):
@@ -32,7 +32,7 @@ class TunnelStatus(str, Enum):
 class BaseTunnel(BaseModel):
     """Base tunnel model with immutable design pattern and context manager support."""
 
-    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True, extra="allow")
 
     id: str = Field(min_length=1, description="Unique tunnel identifier")
     tunnel_type: TunnelType = Field(description="Type of tunnel (HTTP/TCP)")
@@ -46,9 +46,15 @@ class BaseTunnel(BaseModel):
     connected_at: datetime | None = Field(
         default=None, description="Connection timestamp"
     )
-    manager: "TunnelManager | None" = Field(
-        default=None, exclude=True, description="Associated tunnel manager"
-    )
+    # Manager is stored as extra data, not a field
+    # manager: "TunnelManagerProtocol | None" = Field(
+    #     default=None, exclude=True, description="Associated tunnel manager"
+    # )
+
+    @property
+    def manager(self) -> "TunnelManagerProtocol | None":
+        """Get associated tunnel manager."""
+        return getattr(self, "_manager", None)
 
     def with_status(self, status: TunnelStatus) -> "BaseTunnel":
         """Create new tunnel instance with updated status (immutable pattern).
@@ -66,7 +72,7 @@ class BaseTunnel(BaseModel):
 
         return self.model_copy(update=update_data)
 
-    def with_manager(self, manager: "TunnelManager") -> "BaseTunnel":
+    def with_manager(self, manager: "TunnelManagerProtocol") -> "BaseTunnel":
         """Associate tunnel with a manager for context management.
 
         Args:
@@ -75,7 +81,9 @@ class BaseTunnel(BaseModel):
         Returns:
             New tunnel instance with manager association
         """
-        return self.model_copy(update={"manager": manager})
+        new_tunnel = self.model_copy()
+        object.__setattr__(new_tunnel, "_manager", manager)
+        return new_tunnel
 
     def __enter__(self) -> "BaseTunnel":
         """Enter context manager - start the tunnel.

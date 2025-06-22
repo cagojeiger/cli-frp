@@ -1,6 +1,6 @@
-# 간단한 아키텍처 가이드
+# 아키텍처 가이드
 
-이 문서는 FRP Python Wrapper의 간단하고 실용적인 아키텍처를 설명합니다. TDD와 Pydantic v2를 활용한 Pythonic 설계를 따릅니다.
+이 문서는 FRP Python Wrapper의 객체지향 아키텍처를 설명합니다. TDD와 Pydantic v2를 활용한 실용적인 설계를 따릅니다.
 
 ## 핵심 모듈 구조
 
@@ -12,11 +12,18 @@ graph TD
     TunnelManager --> TCPTunnel[TCPTunnel]
     ProcessManager --> Config[Pydantic Config]
     TunnelManager --> Config
+
+    %% Protocol 패턴으로 순환 의존성 해결
+    HTTPTunnel -.-> Protocol[TunnelManagerProtocol]
+    TCPTunnel -.-> Protocol
+    Protocol -.-> TunnelManager
 ```
 
-## 핵심 클래스 (Pydantic 기반)
+## 핵심 클래스 (실제 구현)
 
 ### 1. FRPClient (메인 클라이언트)
+
+실제 구현된 FRPClient는 다음과 같은 구조를 가집니다:
 
 FRP 서버에 연결하고 터널을 관리하는 메인 클래스입니다.
 
@@ -120,11 +127,13 @@ class ProcessManager:
         return self.status == ProcessStatus.RUNNING
 ```
 
-### 3. Tunnel (터널 클래스)
+### 3. Tunnel Models (Pydantic 기반)
 
-로컬 서비스를 외부에 노출하는 터널을 관리합니다.
+터널 모델들은 Protocol 패턴을 사용하여 순환 의존성을 해결합니다.
 
 ```python
+from tunnels.interfaces import TunnelManagerProtocol
+
 class TunnelStatus(str, Enum):
     """터널 상태"""
     PENDING = "pending"
@@ -135,22 +144,30 @@ class TunnelStatus(str, Enum):
     CLOSED = "closed"
 
 class BaseTunnel(BaseModel):
-    """터널 기본 클래스"""
+    """터널 기본 클래스 - Protocol 패턴 적용"""
     model_config = ConfigDict(
         str_strip_whitespace=True,
         validate_assignment=True,
-        extra='forbid'
+        frozen=True,  # 불변성 보장
+        extra='allow'  # Protocol 타입 manager 속성 허용
     )
 
-    id: str = Field(..., min_length=1, description="터널 고유 식별자")
-    local_port: int = Field(..., ge=1, le=65535, description="로컬 포트")
+    id: str = Field(min_length=1, description="터널 고유 식별자")
+    local_port: int = Field(ge=1, le=65535, description="로컬 포트")
     status: TunnelStatus = Field(default=TunnelStatus.PENDING)
     created_at: datetime = Field(default_factory=datetime.now)
 
-    def close(self) -> None:
-        """터널 종료"""
-        # 구현은 TDD로 진행
-        pass
+    # Protocol 패턴: manager는 property로 구현
+    @property
+    def manager(self) -> Optional["TunnelManagerProtocol"]:
+        """연결된 TunnelManager (Protocol 타입)"""
+        return getattr(self, '_manager', None)
+
+    def with_manager(self, manager: "TunnelManagerProtocol") -> "BaseTunnel":
+        """Manager와 연결된 새 터널 인스턴스 반환"""
+        new_tunnel = self.model_copy()
+        object.__setattr__(new_tunnel, '_manager', manager)
+        return new_tunnel
 
 class HTTPTunnel(BaseTunnel):
     """HTTP 터널"""
@@ -230,36 +247,43 @@ class ConfigBuilder:
 
 ## 사용 예제
 
-### 기본 사용법
+### 고수준 API 사용
 
 ```python
-from frp_wrapper import FRPClient
+from frp_wrapper import create_tunnel, create_tcp_tunnel
 
-# 1. 클라이언트 생성 및 연결
-client = FRPClient("example.com", auth_token="your-token")
-client.connect()
+# HTTP 터널 생성
+url = create_tunnel("example.com", 3000, "/myapp", auth_token="secret")
+print(f"Your app is live at: {url}")  # https://example.com/myapp/
 
-# 2. HTTP 터널 생성
-tunnel = client.expose_path(3000, "myapp")
-print(f"URL: {tunnel.url}")  # https://example.com/myapp/
-
-# 3. TCP 터널 생성
-tcp_tunnel = client.expose_tcp(5432)
-print(f"Endpoint: {tcp_tunnel.endpoint}")
-
-# 4. 정리
-tunnel.close()
-tcp_tunnel.close()
-client.disconnect()
+# TCP 터널 생성
+endpoint = create_tcp_tunnel("example.com", 5432, auth_token="secret")
+print(f"Database endpoint: {endpoint}")  # example.com:5432
 ```
 
-### Context Manager 사용
+### TunnelManager 직접 사용
 
 ```python
-with FRPClient("example.com") as client:
-    with client.expose_path(3000, "myapp") as tunnel:
-        print(f"Tunnel active: {tunnel.url}")
-        # 자동으로 터널과 클라이언트가 정리됨
+from frp_wrapper import TunnelManager, TunnelConfig
+
+# 설정 생성
+config = TunnelConfig(
+    server_host="example.com",
+    auth_token="secret",
+    default_domain="example.com"
+)
+
+# 터널 매니저 생성
+manager = TunnelManager(config)
+
+# HTTP 터널 생성 및 시작
+tunnel = manager.create_http_tunnel("my-app", 3000, "/myapp")
+manager.start_tunnel(tunnel.id)
+
+# Context Manager 사용
+with tunnel.with_manager(manager):
+    print(f"Tunnel active at: {tunnel.url}")
+    # 자동으로 터널 정리
 ```
 
 
@@ -279,6 +303,11 @@ with FRPClient("example.com") as client:
 - 복잡한 함수형 패턴 대신 직관적인 클래스 기반 설계
 - 표준 Python 예외 처리
 - Context manager로 자동 리소스 관리
+
+### 4. Protocol 패턴
+- 순환 의존성 방지를 위해 Protocol 인터페이스 사용
+- 구조적 서브타이핑으로 유연한 타입 시스템 구현
+- Pydantic과 Protocol의 호환성 문제를 property 패턴으로 해결
 
 ## 개발 워크플로
 

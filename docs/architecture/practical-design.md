@@ -1,6 +1,6 @@
-# TDD + Pydantic 개발 가이드
+# 실용적 설계 가이드 - TDD + Pydantic
 
-FRP Python Wrapper는 TDD(Test-Driven Development)와 Pydantic v2를 활용한 간단하고 실용적인 설계를 따릅니다.
+FRP Python Wrapper는 TDD(Test-Driven Development)와 Pydantic v2를 활용한 객체지향 설계를 따릅니다.
 
 ## 핵심 원칙
 

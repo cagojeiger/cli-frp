@@ -79,36 +79,34 @@ uv run twine upload dist/*
 ### Current Module Structure
 ```
 src/frp_wrapper/
-├── __init__.py        # Public API exports (FRPClient, ConfigBuilder)
-├── exceptions.py      # Custom exception hierarchy
-├── logging.py         # Structured logging setup (structlog)
-├── process.py         # ProcessManager - FRP binary lifecycle (implemented)
-├── client.py          # FRPClient - Main client class (implemented)
-└── config.py          # ConfigBuilder - Configuration generator (implemented)
+├── __init__.py              # Public API exports
+├── api.py                   # High-level API functions
+├── core/                    # Core functionality
+│   ├── client.py           # FRPClient - Main client class
+│   ├── process.py          # ProcessManager - FRP binary lifecycle
+│   └── config.py           # ConfigBuilder - Configuration generator
+├── tunnels/                 # Tunnel management
+│   ├── interfaces.py       # Protocol interfaces (circular dependency solution)
+│   ├── models.py           # Pydantic tunnel models (HTTPTunnel, TCPTunnel)
+│   ├── manager.py          # TunnelManager - Tunnel lifecycle management
+│   ├── process.py          # TunnelProcessManager - Individual tunnel processes
+│   └── routing.py          # Path validation and conflict detection
+└── common/                  # Common utilities
+    ├── exceptions.py       # Custom exception hierarchy
+    ├── logging.py          # Structured logging setup (structlog)
+    └── utils.py            # Helper functions
 
 tests/
-├── __init__.py
-├── conftest.py        # Pytest fixtures and configuration
-├── test_process.py    # ProcessManager tests
-├── test_client.py     # FRPClient tests
-├── test_config.py     # ConfigBuilder tests
-└── test_*.py          # Other test modules
+├── conftest.py             # Pytest fixtures and configuration
+├── test_*.py               # Test modules for each component
+└── test_*_integration.py   # Integration tests
 ```
 
-### Next Phase Architecture (Checkpoint 3)
-```
-src/frp_wrapper/
-├── tunnel.py          # Pydantic-based tunnel models (HTTPTunnel, TCPTunnel)
-├── server.py          # Server management tools
-└── utils.py           # Helper functions
-
-# Key design: Pydantic BaseModel for strong typing and validation
-class HTTPTunnel(BaseModel):
-    local_port: int = Field(ge=1, le=65535)
-    path: str = Field(regex=r'^/[a-zA-Z0-9/_-]*$')
-    domain: str = Field(min_length=1)
-    # Uses FRP's native 'locations' parameter for path routing
-```
+### Architecture Highlights
+- **Protocol Pattern**: Used in `tunnels/interfaces.py` to solve circular dependencies
+- **Pydantic Models**: Strong typing and validation throughout
+- **Path-based Routing**: Native FRP `locations` parameter support
+- **Modular Design**: Clear separation of concerns
 
 ### Key Design Principles
 
@@ -144,17 +142,22 @@ class HTTPTunnel(BaseModel):
 ## Architecture Patterns
 
 ### Core Component Interaction
-The architecture follows a three-layer pattern where each component has clear responsibilities:
+The architecture follows a modular pattern where each component has clear responsibilities:
 
 1. **FRPClient** orchestrates connections and manages overall state
 2. **ConfigBuilder** generates TOML configurations with temporary file management
 3. **ProcessManager** handles FRP binary lifecycle with health monitoring
+4. **TunnelManager** manages tunnel lifecycle and registry
+5. **Protocol Interfaces** prevent circular dependencies between models and managers
 
 ```python
 # Critical dependency flow - components must be initialized in this order:
 config_builder = ConfigBuilder()
 config_path = config_builder.build()
 process_manager = ProcessManager(binary_path, config_path)
+
+# Protocol pattern usage for circular dependency resolution:
+# models.py uses TunnelManagerProtocol instead of importing TunnelManager directly
 ```
 
 ### Exception Hierarchy Design
@@ -222,16 +225,21 @@ All classes implement consistent state tracking:
 
 ## Implementation Status
 
-**Current Phase**: Checkpoint 2 Complete (Basic FRP Client)
+**Current Phase**: Checkpoint 4 Complete (Path-based Routing)
 - ✅ **ProcessManager**: Binary lifecycle management with health checks
 - ✅ **FRPClient**: Server connection and authentication
 - ✅ **ConfigBuilder**: TOML configuration generation
-- ✅ **Public API**: Exported classes available via `from frp_wrapper import ...`
+- ✅ **TunnelManager**: Complete tunnel lifecycle management
+- ✅ **HTTPTunnel/TCPTunnel**: Pydantic-based tunnel models
+- ✅ **Path Routing**: Native FRP `locations` parameter support
+- ✅ **Protocol Pattern**: Circular dependency resolution
+- ✅ **95%+ Test Coverage**: Comprehensive test suite
 
-**Next Phase**: Checkpoint 3 (Tunnel Management with Pydantic)
-- 🚧 HTTP/TCP tunnel classes using Pydantic BaseModel
-- 🚧 Path-based routing with FRP's native `locations` feature
-- 🚧 Tunnel lifecycle management and monitoring
+**Architecture Improvements**:
+- ✅ Modular structure with clear separation (core/, tunnels/, common/)
+- ✅ Protocol interfaces to prevent circular dependencies
+- ✅ Path validation and conflict detection
+- ✅ High-level API for simple usage
 
 ## Common Tasks
 
@@ -242,33 +250,39 @@ All classes implement consistent state tracking:
 4. Update documentation and examples
 5. Ensure 95%+ test coverage
 
-### Working with FRPClient
+### Working with High-Level API
 ```python
-from frp_wrapper import FRPClient
+from frp_wrapper import create_tunnel, create_tcp_tunnel
 
-# Basic usage
-client = FRPClient("example.com", port=7000, auth_token="secret")
-if client.connect():
-    print("Connected to FRP server!")
-    # Do work...
-    client.disconnect()
+# Simple HTTP tunnel
+url = create_tunnel("example.com", 3000, "/myapp", auth_token="secret")
+print(f"Your app is available at: {url}")
 
-# With context manager
-with FRPClient("example.com", auth_token="secret") as client:
-    print("Connected!")
-    # Automatic disconnect on exit
+# TCP tunnel
+endpoint = create_tcp_tunnel("example.com", 5432, auth_token="secret")
+print(f"Database endpoint: {endpoint}")
 ```
 
-### Working with ConfigBuilder
+### Working with FRPClient and TunnelManager
 ```python
-from frp_wrapper import ConfigBuilder
+from frp_wrapper import FRPClient, TunnelManager, TunnelConfig
 
-# Build FRP configuration
-with ConfigBuilder() as builder:
-    builder.add_server("example.com", port=7000, token="secret")
-    config_path = builder.build()
-    # Use config_path with ProcessManager
-# Automatic cleanup of temp file
+# Create tunnel configuration
+config = TunnelConfig(
+    server_host="example.com",
+    auth_token="secret",
+    default_domain="example.com"
+)
+
+# Create and manage tunnels
+manager = TunnelManager(config)
+tunnel = manager.create_http_tunnel("my-app", 3000, "/myapp")
+manager.start_tunnel(tunnel.id)
+
+# With context manager
+with tunnel.with_manager(manager):
+    print(f"Tunnel active at: {tunnel.url}")
+# Automatic cleanup
 ```
 
 ### Running Continuous Testing (TDD)
@@ -334,3 +348,16 @@ def test_full_initialization_chain():
 - Comprehensive pre-commit hooks for code quality
 - FRP binary must be downloaded separately (not bundled)
 - Integration tests require FRP binary or use mocked processes
+
+## Circular Dependency Resolution
+
+The project uses Protocol pattern to resolve circular dependencies between `tunnels/models.py` and `tunnels/manager.py`:
+
+1. **Problem**: BaseTunnel needs reference to TunnelManager, but TunnelManager imports tunnel models
+2. **Solution**: Created `tunnels/interfaces.py` with Protocol definitions
+3. **Implementation**:
+   - Models use `TunnelManagerProtocol` instead of importing `TunnelManager`
+   - Manager property implemented as `@property` with `getattr` for Pydantic compatibility
+   - No `model_rebuild()` calls needed
+
+This maintains type safety while preventing import cycles.

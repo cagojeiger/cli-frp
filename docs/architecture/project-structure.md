@@ -17,6 +17,7 @@ src/frp_wrapper/
 │
 ├── tunnels/                    # 🚇 터널 생성 및 관리
 │   ├── __init__.py
+│   ├── interfaces.py          # Protocol 인터페이스 정의
 │   ├── models.py              # 터널 데이터 모델 정의
 │   ├── manager.py             # 터널 생명주기 관리
 │   ├── process.py             # 개별 터널 프로세스 제어
@@ -109,6 +110,15 @@ locations = ["/myapp"]
 
 ## 🚇 tunnels/ 디렉토리 (터널 관리)
 
+### `tunnels/interfaces.py`
+**역할**: 순환 의존성을 방지하기 위한 Protocol 인터페이스입니다.
+
+**주요 Protocol**:
+- `TunnelManagerProtocol`: TunnelManager의 인터페이스 정의
+- `TunnelRegistryProtocol`: TunnelRegistry의 인터페이스 정의
+
+**초보자 팁**: Protocol은 "이런 메서드를 가진 객체"를 표현하는 타입입니다. 순환 import 문제를 해결합니다.
+
 ### `tunnels/models.py`
 **역할**: 터널 데이터를 표현하는 Pydantic 모델들입니다.
 
@@ -117,7 +127,9 @@ locations = ["/myapp"]
 - `TCPTunnel`: TCP 터널 정보 (포트 매핑)
 - `TunnelConfig`: 터널 생성 설정
 
-**특징**: Pydantic을 사용해 자동 검증과 타입 안정성을 제공합니다.
+**특징**:
+- Pydantic을 사용해 자동 검증과 타입 안정성을 제공
+- Protocol을 사용하여 TunnelManager와의 순환 의존성 해결
 
 ### `tunnels/manager.py`
 **역할**: 여러 터널을 관리하는 매니저 클래스입니다.
@@ -185,14 +197,20 @@ locations = ["/myapp"]
 ```
 api.py
   ↓
-tunnels/manager.py ←→ tunnels/models.py
+tunnels/manager.py → tunnels/models.py
   ↓                      ↓
-core/client.py      tunnels/routing.py
+  ↓                 tunnels/interfaces.py
+  ↓                      ↑
+core/client.py      (Protocol 정의)
   ↓
 core/process.py ←→ core/config.py
   ↓
 common/* (모든 모듈에서 사용)
 ```
+
+**순환 의존성 해결**:
+- `models.py`와 `manager.py` 사이의 순환 의존성을 Protocol 패턴으로 해결
+- `interfaces.py`가 중간 계층 역할을 수행
 
 ## 🚀 초보자를 위한 시작 가이드
 

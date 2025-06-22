@@ -483,9 +483,3 @@ class TunnelManager:
 
         logger.info(f"Shutdown all tunnels, success={success}")
         return success
-
-
-# Rebuild tunnel models after TunnelManager is defined to resolve forward references
-BaseTunnel.model_rebuild()
-HTTPTunnel.model_rebuild()
-TCPTunnel.model_rebuild()

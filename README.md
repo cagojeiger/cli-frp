@@ -8,7 +8,7 @@ A Python wrapper for FRP (Fast Reverse Proxy) that simplifies tunneling and path
 - **Path-based Routing**: Direct integration with FRP's native `locations` feature
 - **No External Dependencies**: Uses FRP's built-in capabilities, no Nginx required
 - **Context Managers**: Automatic resource cleanup
-- **Clean Architecture**: Functional programming and domain-driven design
+- **Clean Architecture**: Object-oriented design with Pydantic models
 
 ## Quick Start
 
@@ -53,19 +53,19 @@ locations = ["/myapp"]  # Native FRP feature!
 - 📖 [Quick Start Guide](docs/00-quickstart.md) - Get running in 5 minutes
 - 🔧 [Installation](docs/01-installation.md) - Detailed setup instructions
 - 🏗️ [Project Overview](docs/spec/00-overview.md) - Core concepts and architecture
-- 🎯 [Domain Model](docs/architecture/domain-model.md) - Domain-driven design details
+- 🎯 [Architecture Guide](docs/architecture/domain-model.md) - Object-oriented design with Pydantic
 
 ## Project Status
 
-**🚧 Currently in Design Phase**
+**✅ Checkpoint 4 Complete - Path-based Routing**
 
-This project is actively being designed with a focus on:
-- Functional programming principles
-- Domain-driven design
-- AI-friendly architecture
-- Step-by-step implementation roadmap
+This project has been implemented with:
+- Object-oriented design with Pydantic models
+- Test-driven development (95%+ coverage)
+- Protocol pattern for clean architecture
+- Native FRP `locations` support
 
-See [CLAUDE.md](CLAUDE.md) for development guidelines and [plan/](plan/) for detailed roadmap.
+See [CLAUDE.md](CLAUDE.md) for development guidelines.
 
 ## License
 
