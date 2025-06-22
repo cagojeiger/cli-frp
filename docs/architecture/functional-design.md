@@ -1,322 +1,385 @@
-# 함수형 프로그래밍 설계 가이드
+# TDD + Pydantic 개발 가이드
 
-FRP Python Wrapper는 함수형 프로그래밍 패러다임을 따라 설계되었습니다. 이 문서는 프로젝트에서 사용되는 함수형 패턴과 원칙을 설명합니다.
+FRP Python Wrapper는 TDD(Test-Driven Development)와 Pydantic v2를 활용한 간단하고 실용적인 설계를 따릅니다.
 
 ## 핵심 원칙
 
-### 1. 불변성 (Immutability)
-모든 데이터 구조는 불변으로 설계되어 있습니다.
+### 1. Test-Driven Development (TDD)
+모든 기능은 테스트를 먼저 작성한 후 구현합니다.
 
 ```python
-from dataclasses import dataclass, frozen
+# 1. 실패하는 테스트 작성
+def test_client_connects_to_server():
+    """클라이언트가 서버에 연결되어야 함"""
+    client = FRPClient("example.com")
+    result = client.connect()
+    assert result is True
+    assert client.is_connected()
 
-@frozen
-@dataclass
-class Client:
-    """불변 클라이언트 객체"""
-    id: ClientId
-    server: ServerAddress
-    connection_state: ConnectionState
-    
-    def with_connection(self, state: ConnectionState) -> 'Client':
-        """새로운 연결 상태를 가진 클라이언트 반환"""
-        return dataclasses.replace(self, connection_state=state)
-```
+# 2. 최소한의 구현
+def connect(self) -> bool:
+    # 테스트를 통과시키는 최소 구현
+    self.status = ConnectionStatus.CONNECTED
+    return True
 
-### 2. 순수 함수 (Pure Functions)
-비즈니스 로직은 부수 효과가 없는 순수 함수로 구현됩니다.
-
-```python
-def create_tcp_tunnel(
-    client_id: ClientId,
-    local_port: int,
-    remote_port: Optional[int] = None
-) -> Result[TCPTunnel, str]:
-    """TCP 터널 생성 - 순수 함수"""
-    # 같은 입력에 대해 항상 같은 출력
-    # 외부 상태를 변경하지 않음
-    # I/O 작업 없음
-```
-
-### 3. 명시적 효과 (Explicit Effects)
-I/O와 부수 효과는 명확히 분리되고 인터페이스로 정의됩니다.
-
-```python
-class ProcessExecutor(Protocol):
-    """프로세스 실행 인터페이스"""
-    def spawn(self, command: List[str]) -> Result[int, str]:
-        """프로세스 시작하고 PID 반환"""
-        ...
-```
-
-## Result 타입
-
-### 기본 사용법
-
-```python
-from typing import TypeVar, Generic, Union
-
-T = TypeVar('T')
-E = TypeVar('E')
-
-@dataclass
-class Ok(Generic[T]):
-    value: T
-    
-    def is_ok(self) -> bool:
+# 3. 리팩터링
+def connect(self) -> bool:
+    try:
+        # 실제 연결 로직 구현
+        self._process_manager.start(self.config_file)
+        self.status = ConnectionStatus.CONNECTED
         return True
-    
-    def map(self, f: Callable[[T], U]) -> 'Result[U, E]':
-        return Ok(f(self.value))
-    
-    def flat_map(self, f: Callable[[T], 'Result[U, E]']) -> 'Result[U, E]':
-        return f(self.value)
-
-@dataclass
-class Err(Generic[E]):
-    error: E
-    
-    def is_ok(self) -> bool:
+    except Exception:
+        self.status = ConnectionStatus.ERROR
         return False
-    
-    def map(self, f: Callable[[T], U]) -> 'Result[U, E]':
-        return self
-    
-    def flat_map(self, f: Callable[[T], 'Result[U, E]']) -> 'Result[U, E]':
-        return self
-
-Result = Union[Ok[T], Err[E]]
 ```
 
-### 패턴 매칭
-
-Python 3.10+의 match 문을 사용한 우아한 에러 처리:
+### 2. Pydantic v2 활용
+모든 데이터 모델과 설정은 Pydantic으로 정의합니다.
 
 ```python
-result = create_client("tunnel.example.com")
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
-match result:
-    case Ok(client):
-        print(f"연결됨: {client.server.host}")
-    case Err(error):
-        print(f"연결 실패: {error}")
+class TunnelConfig(BaseModel):
+    """터널 설정 모델"""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra='forbid'
+    )
+
+    local_port: int = Field(..., ge=1, le=65535, description="로컬 포트")
+    path: str = Field(..., min_length=1, description="HTTP 경로")
+    custom_domains: List[str] = Field(default_factory=list)
+
+    @field_validator('path')
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        if v.startswith('/'):
+            raise ValueError("경로는 '/'로 시작할 수 없습니다")
+        return v
 ```
 
-### 연쇄 연산
+### 3. 간단한 예외 처리
+복잡한 함수형 패턴 대신 표준 Python 예외를 사용합니다.
 
 ```python
-# map: 성공 값을 변환
-url_result = client_result.map(lambda c: c.server.host)
+class TunnelError(Exception):
+    """터널 관련 오류"""
+    pass
 
-# flat_map: Result를 반환하는 함수를 연결
-tunnel_result = client_result.flat_map(
-    lambda c: c.expose_path(3000, "app")
-)
+class ConnectionError(Exception):
+    """연결 관련 오류"""
+    pass
 
-# 기본값 처리
-url = tunnel_result.map(lambda t: t.url).unwrap_or("http://localhost:3000")
+def create_tunnel(local_port: int, path: str) -> HTTPTunnel:
+    """HTTP 터널 생성"""
+    if not (1 <= local_port <= 65535):
+        raise TunnelError(f"잘못된 포트: {local_port}")
+
+    return HTTPTunnel(
+        id=generate_id(),
+        local_port=local_port,
+        path=path
+    )
 ```
 
-## 파이프라인 패턴
+## TDD 사이클
 
-### 함수 조합
+### Red-Green-Refactor
 
 ```python
-from functools import reduce
+# RED: 실패하는 테스트
+def test_tunnel_validates_port():
+    """터널이 포트를 검증해야 함"""
+    with pytest.raises(TunnelError):
+        create_tunnel(0, "test")  # 잘못된 포트
 
-def pipe(*functions: Callable) -> Callable:
-    """함수들을 연결하는 파이프"""
-    return reduce(lambda f, g: lambda x: g(f(x)), functions)
+# GREEN: 테스트 통과
+def create_tunnel(local_port: int, path: str) -> HTTPTunnel:
+    if local_port <= 0:
+        raise TunnelError("잘못된 포트")
+    return HTTPTunnel(id="test", local_port=local_port, path=path)
 
-# 사용 예
-tunnel_pipeline = pipe(
-    create_client,
-    lambda c: c.expose_path(3000, "app"),
-    lambda t: t.url
-)
-
-url = tunnel_pipeline("tunnel.example.com")
+# REFACTOR: 코드 개선
+def create_tunnel(local_port: int, path: str) -> HTTPTunnel:
+    config = TunnelConfig(local_port=local_port, path=path)  # Pydantic 검증
+    return HTTPTunnel(
+        id=generate_tunnel_id(),
+        local_port=config.local_port,
+        path=config.path
+    )
 ```
 
-### Result 파이프라인
+## Pydantic 패턴
+
+### 1. 설정 검증
 
 ```python
-def map_result(f: Callable[[T], U]) -> Callable[[Result[T, E]], Result[U, E]]:
-    """Result 타입에 대한 map 함수"""
-    def wrapper(result: Result[T, E]) -> Result[U, E]:
-        return result.map(f)
-    return wrapper
+class ClientConfig(BaseModel):
+    """클라이언트 설정"""
 
-def flat_map_result(f: Callable[[T], Result[U, E]]) -> Callable[[Result[T, E]], Result[U, E]]:
-    """Result 타입에 대한 flat_map 함수"""
-    def wrapper(result: Result[T, E]) -> Result[U, E]:
-        return result.flat_map(f)
-    return wrapper
+    server_host: str = Field(..., min_length=1)
+    server_port: int = Field(default=7000, ge=1, le=65535)
+    auth_token: Optional[str] = Field(None, min_length=8)
 
-# 사용 예
-result = pipe(
-    lambda _: create_client("tunnel.example.com"),
-    flat_map_result(lambda c: c.expose_path(3000, "app")),
-    map_result(lambda t: t.url)
-)(None)
+    @field_validator('server_host')
+    @classmethod
+    def validate_host(cls, v: str) -> str:
+        if not v or v.isspace():
+            raise ValueError("서버 주소는 필수입니다")
+        return v.strip()
 ```
 
-## 이벤트 소싱
-
-모든 상태 변경은 이벤트로 추적됩니다:
+### 2. 데이터 직렬화
 
 ```python
-@dataclass
-class DomainEvent:
-    event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    occurred_at: datetime = field(default_factory=datetime.now)
+class TunnelStatus(BaseModel):
+    """터널 상태"""
 
-@dataclass
-class TunnelCreated(DomainEvent):
-    tunnel_id: TunnelId
-    tunnel_type: str
+    id: str
+    status: str
+    local_port: int
+    url: Optional[str] = None
 
-def connect_tunnel(tunnel: Tunnel) -> Tuple[Tunnel, TunnelConnected]:
-    """터널 연결 - 새 상태와 이벤트 반환"""
-    connected_tunnel = tunnel.with_status("connected")
-    event = TunnelConnected(tunnel_id=tunnel.id)
-    return connected_tunnel, event
+    def to_json(self) -> str:
+        """JSON으로 직렬화"""
+        return self.model_dump_json()
+
+    @classmethod
+    def from_json(cls, json_str: str) -> 'TunnelStatus':
+        """JSON에서 역직렬화"""
+        return cls.model_validate_json(json_str)
 ```
 
-## 의존성 주입
-
-이펙트는 인터페이스를 통해 주입됩니다:
+### 3. 설정 파일 관리
 
 ```python
-class TunnelService:
-    def __init__(
-        self,
-        process_executor: ProcessExecutor,
-        file_writer: FileWriter,
-        port_allocator: PortAllocator,
-        event_store: EventStore
-    ):
-        # 모든 이펙트는 인터페이스로 주입
-        self._process_executor = process_executor
-        self._file_writer = file_writer
-        self._port_allocator = port_allocator
-        self._event_store = event_store
+class AppConfig(BaseModel):
+    """앱 전체 설정"""
+
+    client: ClientConfig
+    tunnels: List[TunnelConfig] = Field(default_factory=list)
+
+    @classmethod
+    def load_from_file(cls, file_path: str) -> 'AppConfig':
+        """YAML 파일에서 설정 로드"""
+        with open(file_path) as f:
+            data = yaml.safe_load(f)
+        return cls.model_validate(data)
+
+    def save_to_file(self, file_path: str) -> None:
+        """YAML 파일로 설정 저장"""
+        with open(file_path, 'w') as f:
+            yaml.safe_dump(self.model_dump(), f)
 ```
 
 ## 테스트 전략
 
-### 순수 함수 테스트
+### 1. 단위 테스트
 
 ```python
-def test_create_tcp_tunnel():
-    # 순수 함수는 쉽게 테스트 가능
-    result = create_tcp_tunnel(ClientId("test"), 3000, 8080)
-    
-    assert result.is_ok()
-    tunnel = result.unwrap()
-    assert tunnel.config.local_port.value == 3000
-    assert tunnel.config.remote_port.value == 8080
+class TestTunnelConfig:
+    def test_valid_config_creation(self):
+        """유효한 설정 생성"""
+        config = TunnelConfig(
+            local_port=3000,
+            path="myapp"
+        )
+        assert config.local_port == 3000
+        assert config.path == "myapp"
+
+    def test_invalid_port_raises_error(self):
+        """잘못된 포트로 오류 발생"""
+        with pytest.raises(ValidationError):
+            TunnelConfig(local_port=0, path="test")
+
+    def test_path_validation(self):
+        """경로 검증"""
+        with pytest.raises(ValidationError):
+            TunnelConfig(local_port=3000, path="/invalid")
 ```
 
-### 속성 기반 테스트
+### 2. Property-based 테스트
 
 ```python
 from hypothesis import given, strategies as st
 
 @given(
     port=st.integers(min_value=1, max_value=65535),
-    path=st.text(min_size=1, max_size=100)
+    path=st.text(min_size=1, max_size=50).filter(lambda x: not x.startswith('/'))
 )
-def test_create_tunnel_properties(port: int, path: str):
-    """유효한 입력에 대해 항상 성공"""
-    result = create_http_tunnel(ClientId("test"), port, path)
-    
-    if 1 <= port <= 65535 and not path.startswith('/'):
-        assert result.is_ok()
-        tunnel = result.unwrap()
-        assert tunnel.config.local_port.value == port
-        assert tunnel.path == path
+def test_valid_inputs_always_work(port: int, path: str):
+    """유효한 입력은 항상 동작해야 함"""
+    config = TunnelConfig(local_port=port, path=path)
+    assert config.local_port == port
+    assert config.path == path
 ```
 
-### 이펙트 모킹
+### 3. 통합 테스트
 
 ```python
-def test_tunnel_service_with_mocks():
-    # Mock 생성
-    process_executor = Mock(spec=ProcessExecutor)
-    process_executor.spawn.return_value = Ok(12345)
-    
-    # 서비스 테스트
-    service = TunnelService(
-        process_executor=process_executor,
-        # ... 다른 mock들
+@pytest.mark.integration
+class TestFRPClientIntegration:
+    def test_real_tunnel_creation(self):
+        """실제 터널 생성 테스트"""
+        with patch('subprocess.Popen') as mock_popen:
+            mock_popen.return_value.poll.return_value = None
+
+            client = FRPClient("example.com")
+            client.connect()
+
+            tunnel = client.expose_path(3000, "test")
+            assert tunnel.local_port == 3000
+            assert tunnel.path == "test"
+```
+
+## 실용적인 패턴
+
+### 1. Context Manager
+
+```python
+class FRPClient:
+    def __enter__(self):
+        """자동 연결"""
+        self.connect()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """자동 정리"""
+        try:
+            for tunnel in self._tunnels:
+                tunnel.close()
+            self.disconnect()
+        except Exception as e:
+            logger.error(f"정리 중 오류: {e}")
+```
+
+### 2. 설정 빌더
+
+```python
+class ConfigBuilder:
+    """설정 빌더"""
+
+    def __init__(self):
+        self._server_config = None
+        self._tunnels = []
+
+    def server(self, host: str, port: int = 7000) -> 'ConfigBuilder':
+        """서버 설정"""
+        self._server_config = ClientConfig(
+            server_host=host,
+            server_port=port
+        )
+        return self
+
+    def tunnel(self, local_port: int, path: str) -> 'ConfigBuilder':
+        """터널 추가"""
+        tunnel_config = TunnelConfig(
+            local_port=local_port,
+            path=path
+        )
+        self._tunnels.append(tunnel_config)
+        return self
+
+    def build(self) -> AppConfig:
+        """최종 설정 빌드"""
+        if not self._server_config:
+            raise ValueError("서버 설정이 필요합니다")
+
+        return AppConfig(
+            client=self._server_config,
+            tunnels=self._tunnels
+        )
+
+# 사용 예
+config = (ConfigBuilder()
+    .server("example.com", 7000)
+    .tunnel(3000, "app1")
+    .tunnel(3001, "app2")
+    .build())
+```
+
+### 3. 팩토리 패턴
+
+```python
+class TunnelFactory:
+    """터널 팩토리"""
+
+    @staticmethod
+    def create_http_tunnel(local_port: int, path: str, **kwargs) -> HTTPTunnel:
+        """HTTP 터널 생성"""
+        config = TunnelConfig(
+            local_port=local_port,
+            path=path,
+            **kwargs
+        )
+
+        return HTTPTunnel(
+            id=generate_tunnel_id(),
+            local_port=config.local_port,
+            path=config.path,
+            custom_domains=config.custom_domains
+        )
+
+    @staticmethod
+    def create_tcp_tunnel(local_port: int, remote_port: Optional[int] = None) -> TCPTunnel:
+        """TCP 터널 생성"""
+        return TCPTunnel(
+            id=generate_tunnel_id(),
+            local_port=local_port,
+            remote_port=remote_port
+        )
+```
+
+## 성능 최적화
+
+### 1. Pydantic 최적화
+
+```python
+class OptimizedConfig(BaseModel):
+    """최적화된 설정"""
+
+    model_config = ConfigDict(
+        # 검증 최적화
+        validate_assignment=False,  # 할당 시 검증 비활성화
+        use_enum_values=True,      # enum 값 직접 사용
+        arbitrary_types_allowed=True,  # 임의 타입 허용
     )
-    
-    result = service.create_tcp_tunnel(client, 3000)
-    assert result.is_ok()
 ```
 
-## 실용적인 팁
-
-### 1. 에러 누적
-
-여러 작업의 에러를 수집:
+### 2. 지연 로딩
 
 ```python
-def collect_errors(results: List[Result[T, E]]) -> Tuple[List[T], List[E]]:
-    """Result 리스트에서 성공과 실패 분리"""
-    values = []
-    errors = []
-    
-    for result in results:
-        match result:
-            case Ok(value):
-                values.append(value)
-            case Err(error):
-                errors.append(error)
-    
-    return values, errors
-```
+class LazyClient:
+    """지연 로딩 클라이언트"""
 
-### 2. 시퀀스 처리
+    def __init__(self, config: ClientConfig):
+        self.config = config
+        self._process_manager = None
 
-```python
-def sequence(results: List[Result[T, E]]) -> Result[List[T], E]:
-    """Result 리스트를 Result<List>로 변환"""
-    values = []
-    for result in results:
-        if result.is_err():
-            return result
-        values.append(result.unwrap())
-    return Ok(values)
-```
-
-### 3. 트래버스
-
-```python
-def traverse(
-    f: Callable[[T], Result[U, E]],
-    items: List[T]
-) -> Result[List[U], E]:
-    """리스트의 각 항목에 함수를 적용하고 결과를 수집"""
-    return sequence([f(item) for item in items])
+    @property
+    def process_manager(self) -> ProcessManager:
+        """필요할 때만 생성"""
+        if self._process_manager is None:
+            self._process_manager = ProcessManager(self.config.binary_path)
+        return self._process_manager
 ```
 
 ## 장점
 
-1. **예측 가능성**: 순수 함수는 테스트하기 쉽고 버그가 적습니다
-2. **조합성**: 작은 함수들을 조합하여 복잡한 로직 구성
-3. **병렬성**: 불변 데이터는 동시성 문제가 없습니다
-4. **디버깅**: 상태 변경이 명시적이어서 추적이 쉽습니다
+1. **예측 가능성**: TDD로 모든 동작이 테스트됨
+2. **타입 안전성**: Pydantic으로 런타임 타입 검증
+3. **가독성**: 간단하고 직관적인 Python 코드
+4. **유지보수성**: 표준 패턴으로 이해하기 쉬움
+5. **성능**: Pydantic v2의 Rust 기반 빠른 검증
 
 ## 주의사항
 
-1. **학습 곡선**: 함수형 패러다임에 익숙하지 않은 개발자에게는 어려울 수 있습니다
-2. **메모리 사용**: 불변성으로 인한 객체 복사가 많을 수 있습니다 (구조적 공유로 최적화)
-3. **타입 복잡성**: 제네릭과 고차 함수로 인한 타입 시그니처가 복잡할 수 있습니다
+1. **테스트 커버리지**: 95% 이상 유지
+2. **Pydantic 버전**: v2 기능 활용하되 하위 호환성 고려
+3. **예외 처리**: 명확하고 구체적인 오류 메시지
+4. **문서화**: docstring과 type hint 적극 활용
 
-## 참고 자료
-
-- [Functional Programming in Python](https://docs.python.org/3/howto/functional.html)
-- [Railway Oriented Programming](https://fsharpforfunandprofit.com/rop/)
-- [Algebraic Data Types in Python](https://github.com/python/typing/issues/1021)
+이 접근 방식은 복잡한 함수형 패턴 없이도 견고하고 유지보수하기 쉬운 코드를 만들 수 있게 해줍니다.

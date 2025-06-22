@@ -1,652 +1,447 @@
-# Checkpoint 2: 기본 클라이언트 API (함수형 접근)
+# Checkpoint 2: Basic Client API (TDD Approach)
 
-## 개요
-사용자가 FRP를 쉽게 사용할 수 있도록 함수형 프로그래밍 패러다임을 따르는 고수준 클라이언트 API를 구현합니다. 불변 상태와 순수 함수를 사용하여 FRP 프로세스를 관리합니다.
+## Overview
+TDD를 사용하여 사용자 친화적인 FRPClient 클래스를 구현합니다. 간단하고 직관적인 Python API를 제공하며 FRP 서버 연결을 관리합니다.
 
-## 설계 원칙
-- **불변 클라이언트 상태**: 모든 클라이언트 상태는 불변 객체로 관리
-- **순수 함수**: 연결 로직은 부수 효과 없는 순수 함수로 구현
-- **명시적 효과**: I/O 작업은 Effect 타입으로 격리
-- **함수 조합**: 작은 함수들을 파이프라인으로 조합
-
-## 목표
-- 함수형 클라이언트 API 구현
-- Result 타입 기반 에러 처리
-- 서버 연결 설정 및 검증
+## Goals
+- 직관적인 FRPClient 클래스 구현
+- 서버 연결 관리 및 검증
 - 기본 인증 처리
-- 프로세스 생명주기 통합 관리
+- Context manager 지원
+- 강력한 TDD 커버리지
 
-## 구현 범위
+## Test-First Implementation
 
-### 1. 도메인 모델 (불변 데이터)
+### 1. Test Structure
 ```python
-# src/domain/client.py
-from dataclasses import dataclass, frozen
-from typing import Optional
-from datetime import datetime
-from src.domain.types import Result, Ok, Err
+# tests/test_client.py
+import pytest
+from unittest.mock import Mock, patch
+from frp_wrapper.client import FRPClient
+from frp_wrapper.exceptions import ConnectionError, AuthenticationError
 
-@frozen
-@dataclass
-class ClientId:
-    value: str
+class TestFRPClient:
+    def test_client_requires_server_address(self):
+        """FRPClient should require a valid server address"""
 
-@frozen
-@dataclass
-class ServerAddress:
-    host: str
-    port: int = 7000
-    
-    def __post_init__(self):
-        if not self.host:
-            raise ValueError("Server host cannot be empty")
-        if not 1 <= self.port <= 65535:
-            raise ValueError(f"Invalid port: {self.port}")
+    def test_client_connects_to_server(self):
+        """FRPClient should connect to FRP server successfully"""
 
-@frozen
-@dataclass
-class AuthToken:
-    value: str
-    
-    def masked(self) -> str:
-        """토큰을 마스킹하여 반환"""
-        if len(self.value) <= 8:
-            return "***"
-        return f"{self.value[:4]}...{self.value[-4:]}"
+    def test_client_handles_connection_failure(self):
+        """FRPClient should handle connection failures gracefully"""
 
-@frozen
-@dataclass
-class ConnectionState:
-    """연결 상태 (불변)"""
-    status: str = "disconnected"  # disconnected, connecting, connected, error
-    server: Optional[ServerAddress] = None
-    connected_at: Optional[datetime] = None
-    last_error: Optional[str] = None
-    
-    def with_status(self, status: str, **kwargs) -> 'ConnectionState':
-        """새로운 상태를 가진 ConnectionState 반환"""
-        return dataclasses.replace(self, status=status, **kwargs)
+    def test_client_supports_authentication(self):
+        """FRPClient should support token-based authentication"""
 
-@frozen
-@dataclass
-class Client:
-    """FRP 클라이언트 (불변)"""
-    id: ClientId
-    server: ServerAddress
-    auth_token: Optional[AuthToken] = None
-    connection_state: ConnectionState = field(default_factory=ConnectionState)
-    process_id: Optional[ProcessId] = None
-    config_path: Optional[str] = None
-    
-    def with_connection(self, state: ConnectionState, **kwargs) -> 'Client':
-        """새로운 연결 상태를 가진 클라이언트 반환"""
-        return dataclasses.replace(self, connection_state=state, **kwargs)
+    def test_client_context_manager(self):
+        """FRPClient should work as a context manager"""
 ```
 
-### 2. 순수 함수 (클라이언트 연산)
+### 2. FRPClient Class (Test-Driven)
+
 ```python
-# src/core/client_operations.py
-from typing import Tuple, Optional
-from src.domain.client import Client, ClientId, ServerAddress, AuthToken, ConnectionState
-from src.domain.process import Process
-from src.domain.events import ClientCreated, ClientConnected, ClientDisconnected
-from src.domain.types import Result, Ok, Err
-import uuid
-
-def create_client(
-    server: str,
-    port: int = 7000,
-    auth_token: Optional[str] = None
-) -> Result[Client, str]:
-    """클라이언트 생성 - 순수 함수"""
-    try:
-        client = Client(
-            id=ClientId(str(uuid.uuid4())),
-            server=ServerAddress(server, port),
-            auth_token=AuthToken(auth_token) if auth_token else None
-        )
-        return Ok(client)
-    except ValueError as e:
-        return Err(str(e))
-
-def connect_client(
-    client: Client,
-    process_id: ProcessId,
-    config_path: str
-) -> Tuple[Client, ClientConnected]:
-    """클라이언트 연결 - 새 상태와 이벤트 반환"""
-    if client.connection_state.status != "disconnected":
-        raise InvalidStateError(f"Cannot connect in {client.connection_state.status} state")
-    
-    new_state = ConnectionState(
-        status="connected",
-        server=client.server,
-        connected_at=datetime.now()
-    )
-    
-    new_client = client.with_connection(
-        new_state,
-        process_id=process_id,
-        config_path=config_path
-    )
-    
-    event = ClientConnected(
-        client_id=client.id,
-        server=client.server,
-        occurred_at=datetime.now()
-    )
-    
-    return new_client, event
-
-def disconnect_client(
-    client: Client,
-    reason: Optional[str] = None
-) -> Tuple[Client, ClientDisconnected]:
-    """클라이언트 연결 해제 - 새 상태와 이벤트 반환"""
-    if client.connection_state.status != "connected":
-        raise InvalidStateError(f"Cannot disconnect in {client.connection_state.status} state")
-    
-    new_state = ConnectionState(
-        status="disconnected",
-        last_error=reason
-    )
-    
-    new_client = client.with_connection(
-        new_state,
-        process_id=None,
-        config_path=None
-    )
-    
-    event = ClientDisconnected(
-        client_id=client.id,
-        reason=reason,
-        occurred_at=datetime.now()
-    )
-    
-    return new_client, event
-
-def build_client_config(client: Client) -> Dict[str, Any]:
-    """클라이언트 설정 생성 - 순수 함수"""
-    config = {
-        'common': {
-            'server_addr': client.server.host,
-            'server_port': client.server.port
-        }
-    }
-    
-    if client.auth_token:
-        config['common']['token'] = client.auth_token.value
-    
-    return config
-```
-
-### 3. 바이너리 탐색 (순수 함수)
-```python
-# src/core/binary_finder.py
-from typing import List, Optional
-from src.domain.types import Result, Ok, Err
+# src/frp_wrapper/client.py
 import os
+import shutil
+from typing import Optional, List
+from contextlib import contextmanager
+from .process import ProcessManager
+from .config import ConfigBuilder
+from .exceptions import ConnectionError, AuthenticationError, BinaryNotFoundError
 
-def get_search_paths() -> List[str]:
-    """바이너리 검색 경로 목록 - 순수 함수"""
-    paths = []
-    
-    # PATH 환경변수
-    if 'PATH' in os.environ:
-        paths.extend(os.environ['PATH'].split(os.pathsep))
-    
-    # 일반적인 설치 위치
-    common_paths = [
-        '/usr/local/bin',
-        '/usr/bin',
-        '/opt/frp',
-        '~/.local/bin',
-        './bin'
-    ]
-    
-    paths.extend(common_paths)
-    return list(dict.fromkeys(paths))  # 중복 제거
+class FRPClient:
+    """Main client for connecting to FRP server and managing tunnels"""
 
-def check_binary_exists(path: str) -> bool:
-    """바이너리 존재 확인 - 순수 함수 (경로 문자열 조작)"""
-    # 실제 파일 시스템 체크는 Effect로 분리
-    return path.endswith('frpc') or path.endswith('frpc.exe')
+    def __init__(self,
+                 server: str,
+                 port: int = 7000,
+                 auth_token: Optional[str] = None,
+                 binary_path: Optional[str] = None):
+        """Initialize FRP client
 
-def validate_binary_version(binary_path: str, min_version: str = "0.40.0") -> Result[str, str]:
-    """바이너리 버전 검증 - 순수 함수"""
-    # 버전 파싱 및 비교 로직 (실제 실행은 Effect)
-    return Ok(binary_path)
+        Args:
+            server: FRP server address
+            port: FRP server port (default: 7000)
+            auth_token: Authentication token (optional)
+            binary_path: Path to frpc binary (auto-detected if None)
+
+        Raises:
+            ValueError: If server address is invalid
+            BinaryNotFoundError: If FRP binary not found
+        """
+        # TDD: Implement step by step based on failing tests
+
+    def connect(self) -> bool:
+        """Connect to FRP server
+
+        Returns:
+            True if connected successfully
+
+        Raises:
+            ConnectionError: If connection fails
+            AuthenticationError: If authentication fails
+        """
+        # Implementation driven by tests
+
+    def disconnect(self) -> bool:
+        """Disconnect from FRP server
+
+        Returns:
+            True if disconnected successfully
+        """
+        # Implementation driven by tests
+
+    def is_connected(self) -> bool:
+        """Check if currently connected to server"""
+        # Implementation driven by tests
+
+    def __enter__(self):
+        """Context manager entry"""
+        # Implementation driven by tests
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit"""
+        # Implementation driven by tests
+
+    @staticmethod
+    def find_frp_binary() -> str:
+        """Find FRP binary in system PATH
+
+        Returns:
+            Path to frpc binary
+
+        Raises:
+            BinaryNotFoundError: If binary not found
+        """
+        # Implementation driven by tests
 ```
 
-### 4. 이펙트 인터페이스
+### 3. Test Cases (Write These First)
+
 ```python
-# src/effects/protocols.py
-from typing import Protocol, Optional, List
-from src.domain.types import Result
+# tests/test_client.py
+import pytest
+import tempfile
+import os
+from unittest.mock import Mock, patch, MagicMock
+from frp_wrapper.client import FRPClient
+from frp_wrapper.exceptions import ConnectionError, AuthenticationError, BinaryNotFoundError
 
-class BinarySearcher(Protocol):
-    """바이너리 검색 인터페이스"""
-    
-    def file_exists(self, path: str) -> bool:
-        """파일 존재 확인"""
-        ...
-    
-    def is_executable(self, path: str) -> bool:
-        """실행 가능 확인"""
-        ...
-    
-    def get_version(self, binary_path: str) -> Result[str, str]:
-        """바이너리 버전 확인"""
-        ...
+class TestFRPClient:
 
-class ConnectionValidator(Protocol):
-    """연결 검증 인터페이스"""
-    
-    def test_connection(self, host: str, port: int) -> Result[None, str]:
-        """서버 연결 테스트"""
-        ...
-    
-    def validate_auth(self, host: str, port: int, token: str) -> Result[None, str]:
-        """인증 검증"""
-        ...
+    def test_client_requires_server_address(self):
+        """FRPClient should validate server address"""
+        with pytest.raises(ValueError, match="Server address cannot be empty"):
+            FRPClient("")
+
+        with pytest.raises(ValueError, match="Server address cannot be empty"):
+            FRPClient("   ")  # Whitespace only
+
+    def test_client_validates_port(self):
+        """FRPClient should validate port number"""
+        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+            FRPClient("example.com", port=0)
+
+        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+            FRPClient("example.com", port=65536)
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    def test_client_initialization_success(self, mock_find_binary):
+        """FRPClient should initialize successfully with valid parameters"""
+        mock_find_binary.return_value = "/usr/local/bin/frpc"
+
+        client = FRPClient("example.com", port=7000, auth_token="secret123")
+
+        assert client.server == "example.com"
+        assert client.port == 7000
+        assert client.auth_token == "secret123"
+        assert not client.is_connected()
+        mock_find_binary.assert_called_once()
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    def test_client_auto_finds_binary(self, mock_find_binary):
+        """FRPClient should automatically find FRP binary"""
+        mock_find_binary.return_value = "/usr/local/bin/frpc"
+
+        client = FRPClient("example.com")
+
+        assert client.binary_path == "/usr/local/bin/frpc"
+        mock_find_binary.assert_called_once()
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    def test_client_handles_missing_binary(self, mock_find_binary):
+        """FRPClient should handle missing FRP binary"""
+        mock_find_binary.side_effect = BinaryNotFoundError("frpc binary not found")
+
+        with pytest.raises(BinaryNotFoundError):
+            FRPClient("example.com")
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    @patch('frp_wrapper.client.ProcessManager')
+    @patch('frp_wrapper.client.ConfigBuilder')
+    def test_client_connects_successfully(self, mock_config_builder, mock_process_manager, mock_find_binary):
+        """FRPClient should connect to server successfully"""
+        # Setup mocks
+        mock_find_binary.return_value = "/usr/local/bin/frpc"
+        mock_config = Mock()
+        mock_config_builder.return_value = mock_config
+        mock_config.build.return_value = "/tmp/test.toml"
+
+        mock_process = Mock()
+        mock_process_manager.return_value = mock_process
+        mock_process.start.return_value = True
+        mock_process.wait_for_startup.return_value = True
+
+        client = FRPClient("example.com", auth_token="secret")
+        result = client.connect()
+
+        assert result is True
+        assert client.is_connected()
+        mock_config.add_server.assert_called_with("example.com", 7000, "secret")
+        mock_process.start.assert_called_once()
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    @patch('frp_wrapper.client.ProcessManager')
+    def test_client_handles_connection_failure(self, mock_process_manager, mock_find_binary):
+        """FRPClient should handle connection failures"""
+        mock_find_binary.return_value = "/usr/local/bin/frpc"
+        mock_process = Mock()
+        mock_process_manager.return_value = mock_process
+        mock_process.start.side_effect = OSError("Connection refused")
+
+        client = FRPClient("invalid.server.com")
+
+        with pytest.raises(ConnectionError, match="Failed to connect"):
+            client.connect()
+
+        assert not client.is_connected()
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    @patch('frp_wrapper.client.ProcessManager')
+    def test_client_handles_authentication_failure(self, mock_process_manager, mock_find_binary):
+        """FRPClient should handle authentication failures"""
+        mock_find_binary.return_value = "/usr/local/bin/frpc"
+        mock_process = Mock()
+        mock_process_manager.return_value = mock_process
+        mock_process.start.return_value = True
+        mock_process.wait_for_startup.return_value = False  # Startup failed = auth issue
+
+        client = FRPClient("example.com", auth_token="invalid_token")
+
+        with pytest.raises(AuthenticationError, match="Authentication failed"):
+            client.connect()
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    @patch('frp_wrapper.client.ProcessManager')
+    def test_client_disconnects_successfully(self, mock_process_manager, mock_find_binary):
+        """FRPClient should disconnect from server"""
+        # Setup connected client
+        mock_find_binary.return_value = "/usr/local/bin/frpc"
+        mock_process = Mock()
+        mock_process_manager.return_value = mock_process
+        mock_process.start.return_value = True
+        mock_process.wait_for_startup.return_value = True
+        mock_process.stop.return_value = True
+
+        client = FRPClient("example.com")
+        client.connect()
+
+        # Test disconnect
+        result = client.disconnect()
+
+        assert result is True
+        assert not client.is_connected()
+        mock_process.stop.assert_called_once()
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    @patch('frp_wrapper.client.ProcessManager')
+    def test_client_context_manager(self, mock_process_manager, mock_find_binary):
+        """FRPClient should work as context manager"""
+        mock_find_binary.return_value = "/usr/local/bin/frpc"
+        mock_process = Mock()
+        mock_process_manager.return_value = mock_process
+        mock_process.start.return_value = True
+        mock_process.wait_for_startup.return_value = True
+        mock_process.stop.return_value = True
+
+        with FRPClient("example.com") as client:
+            assert client.is_connected()
+            mock_process.start.assert_called_once()
+
+        # Should auto-disconnect on exit
+        mock_process.stop.assert_called_once()
+
+    @patch('frp_wrapper.client.FRPClient.find_frp_binary')
+    def test_client_context_manager_handles_exception(self, mock_find_binary):
+        """FRPClient context manager should handle exceptions"""
+        mock_find_binary.return_value = "/usr/local/bin/frpc"
+
+        with patch('frp_wrapper.client.ProcessManager') as mock_process_manager:
+            mock_process = Mock()
+            mock_process_manager.return_value = mock_process
+            mock_process.start.return_value = True
+            mock_process.wait_for_startup.return_value = True
+            mock_process.stop.return_value = True
+
+            try:
+                with FRPClient("example.com") as client:
+                    raise ValueError("Test exception")
+            except ValueError:
+                pass  # Expected
+
+            # Should still disconnect on exception
+            mock_process.stop.assert_called_once()
+
+    @patch('shutil.which')
+    def test_find_frp_binary_success(self, mock_which):
+        """find_frp_binary should locate frpc binary"""
+        mock_which.return_value = "/usr/local/bin/frpc"
+
+        binary_path = FRPClient.find_frp_binary()
+
+        assert binary_path == "/usr/local/bin/frpc"
+        mock_which.assert_called_with('frpc')
+
+    @patch('shutil.which')
+    def test_find_frp_binary_not_found(self, mock_which):
+        """find_frp_binary should raise exception if binary not found"""
+        mock_which.return_value = None
+
+        with pytest.raises(BinaryNotFoundError, match="frpc binary not found"):
+            FRPClient.find_frp_binary()
+
+    @patch('os.path.exists')
+    @patch('os.access')
+    def test_find_frp_binary_custom_paths(self, mock_access, mock_exists):
+        """find_frp_binary should check common installation paths"""
+        with patch('shutil.which', return_value=None):  # Not in PATH
+            mock_exists.side_effect = lambda path: path == "/opt/frp/frpc"
+            mock_access.side_effect = lambda path, mode: path == "/opt/frp/frpc"
+
+            binary_path = FRPClient.find_frp_binary()
+
+            assert binary_path == "/opt/frp/frpc"
+
+# Integration tests
+@pytest.mark.integration
+class TestFRPClientIntegration:
+
+    def test_real_connection_no_server(self):
+        """Test connection failure with no server"""
+        client = FRPClient("127.0.0.1", port=9999)  # Unlikely to have server
+
+        with pytest.raises(ConnectionError):
+            client.connect()
+
+    @pytest.mark.skipif(not shutil.which('frpc'), reason="FRP binary not available")
+    def test_real_binary_detection(self):
+        """Test real FRP binary detection"""
+        binary_path = FRPClient.find_frp_binary()
+
+        assert os.path.exists(binary_path)
+        assert os.access(binary_path, os.X_OK)
+        assert binary_path.endswith('frpc')
 ```
 
-### 5. 애플리케이션 서비스
-```python
-# src/application/client_service.py
-from typing import Optional, Dict, Any
-from src.domain.client import Client
-from src.domain.process import Process
-from src.domain.types import Result, Ok, Err
-from src.core import client_operations, process_operations, config_builder
-from src.effects.protocols import ProcessExecutor, FileWriter, BinarySearcher, EventStore
-from src.application.pipelines import pipe, flat_map_result, map_result
+### 4. Configuration Builder (Supporting Class)
 
-class ClientService:
-    """클라이언트 관리 서비스 - 순수 함수들을 조합"""
-    
-    def __init__(
-        self,
-        binary_searcher: BinarySearcher,
-        process_executor: ProcessExecutor,
-        file_writer: FileWriter,
-        event_store: EventStore
-    ):
-        self._binary_searcher = binary_searcher
-        self._process_executor = process_executor
-        self._file_writer = file_writer
-        self._event_store = event_store
-        self._clients: Dict[str, Client] = {}
-        self._processes: Dict[str, Process] = {}
-    
-    def create_and_connect(
-        self,
-        server: str,
-        port: int = 7000,
-        auth_token: Optional[str] = None,
-        binary_path: Optional[str] = None
-    ) -> Result[Client, str]:
-        """클라이언트 생성 및 연결 파이프라인"""
-        
-        # 1. 바이너리 찾기 또는 검증
-        binary_result = self._resolve_binary(binary_path)
-        if binary_result.is_err():
-            return binary_result
-        
-        resolved_binary = binary_result.unwrap()
-        
-        # 2. 클라이언트 생성 및 연결 파이프라인
-        return pipe(
-            lambda _: client_operations.create_client(server, port, auth_token),
-            flat_map_result(lambda c: self._create_process_and_config(c, resolved_binary)),
-            flat_map_result(lambda data: self._start_and_connect(data)),
-            map_result(lambda data: self._finalize_connection(data))
-        )(None)
-    
-    def _resolve_binary(self, binary_path: Optional[str]) -> Result[str, str]:
-        """바이너리 경로 확인 - Effect 사용"""
-        if binary_path:
-            if self._binary_searcher.file_exists(binary_path):
-                return Ok(binary_path)
-            return Err(f"Binary not found: {binary_path}")
-        
-        # 자동 탐색
-        search_paths = get_search_paths()
-        for base_path in search_paths:
-            frpc_path = os.path.join(base_path, "frpc")
-            if self._binary_searcher.file_exists(frpc_path):
-                if self._binary_searcher.is_executable(frpc_path):
-                    return Ok(frpc_path)
-        
-        return Err("frpc binary not found in PATH")
-    
-    def _create_process_and_config(
-        self,
-        client: Client,
-        binary_path: str
-    ) -> Result[Dict[str, Any], str]:
-        """프로세스와 설정 생성"""
-        # 설정 생성 (순수)
-        config = build_client_config(client)
-        config_content = config_builder.build_ini_content(config)
-        
-        # 설정 파일 작성 (Effect)
-        config_result = self._file_writer.write_temp(config_content)
-        if config_result.is_err():
-            return Err(f"Failed to write config: {config_result.error}")
-        
-        config_path = config_result.unwrap()
-        
-        # 프로세스 생성 (순수)
-        process_result = process_operations.create_process(binary_path, config_path)
-        if process_result.is_err():
-            return process_result
-        
-        process = process_result.unwrap()
-        
-        return Ok({
-            'client': client,
-            'process': process,
-            'config_path': config_path
-        })
-    
-    def _start_and_connect(self, data: Dict[str, Any]) -> Result[Dict[str, Any], str]:
-        """프로세스 시작 및 연결"""
-        client = data['client']
-        process = data['process']
-        config_path = data['config_path']
-        
-        # 프로세스 시작 (Effect)
-        command = [process.binary_path.value, '-c', config_path]
-        spawn_result = self._process_executor.spawn(command)
-        
-        if spawn_result.is_err():
-            return Err(f"Failed to start process: {spawn_result.error}")
-        
-        pid = spawn_result.unwrap()
-        
-        # 프로세스 상태 업데이트 (순수)
-        new_process, process_event = process_operations.start_process(process, pid)
-        
-        # 클라이언트 연결 (순수)
-        connected_client, client_event = client_operations.connect_client(
-            client, process.id, config_path
-        )
-        
-        # 이벤트 저장
-        self._event_store.append(process_event)
-        self._event_store.append(client_event)
-        
-        return Ok({
-            'client': connected_client,
-            'process': new_process
-        })
-    
-    def _finalize_connection(self, data: Dict[str, Any]) -> Client:
-        """연결 완료 처리"""
-        client = data['client']
-        process = data['process']
-        
-        # 상태 저장
-        self._clients[client.id.value] = client
-        self._processes[process.id.value] = process
-        
-        return client
-```
-
-### 6. 공개 API
 ```python
-# src/api/client.py
+# src/frp_wrapper/config.py
+import tempfile
+import os
 from typing import Optional
-from src.domain.types import Result
-from src.application.container import Container
 
-def create_client(
-    server: str,
-    port: int = 7000,
-    auth_token: Optional[str] = None,
-    binary_path: Optional[str] = None,
-    **options
-) -> Result[Client, str]:
-    """
-    FRP 클라이언트 생성 및 연결
-    
-    Args:
-        server: FRP 서버 주소
-        port: FRP 서버 포트 (기본: 7000)
-        auth_token: 인증 토큰 (선택)
-        binary_path: frpc 바이너리 경로 (선택, 자동 탐색)
-        **options: 추가 옵션
-    
-    Returns:
-        Result[Client, str]: 성공 시 Ok(client), 실패 시 Err(message)
-    
-    Example:
-        >>> result = create_client("tunnel.example.com", auth_token="secret")
-        >>> match result:
-        ...     case Ok(client):
-        ...         print(f"Connected to {client.server.host}")
-        ...     case Err(error):
-        ...         print(f"Connection failed: {error}")
-    """
-    container = Container()
-    client_service = container.resolve(ClientService)
-    
-    return client_service.create_and_connect(
-        server, port, auth_token, binary_path, **options
-    )
+class ConfigBuilder:
+    """Builds FRP configuration files"""
 
-def disconnect_client(client: Client) -> Result[Client, str]:
-    """
-    클라이언트 연결 해제
-    
-    Args:
-        client: 연결을 해제할 클라이언트
-    
-    Returns:
-        Result[Client, str]: 성공 시 Ok(disconnected_client), 실패 시 Err(message)
-    """
-    container = Container()
-    client_service = container.resolve(ClientService)
-    
-    return client_service.disconnect(client)
+    def __init__(self):
+        self._server_addr: Optional[str] = None
+        self._server_port: int = 7000
+        self._auth_token: Optional[str] = None
+        self._config_path: Optional[str] = None
+
+    def add_server(self, addr: str, port: int = 7000, token: Optional[str] = None):
+        """Add server configuration"""
+        self._server_addr = addr
+        self._server_port = port
+        self._auth_token = token
+
+    def build(self) -> str:
+        """Build configuration file and return path"""
+        if not self._server_addr:
+            raise ValueError("Server address not set")
+
+        config_content = f"""[common]
+server_addr = "{self._server_addr}"
+server_port = {self._server_port}
+"""
+
+        if self._auth_token:
+            config_content += f'token = "{self._auth_token}"\n'
+
+        # Write to temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
+            f.write(config_content)
+            self._config_path = f.name
+
+        return self._config_path
+
+    def cleanup(self):
+        """Clean up temporary config file"""
+        if self._config_path and os.path.exists(self._config_path):
+            os.unlink(self._config_path)
 ```
 
-## 테스트 시나리오
+## Implementation Timeline (TDD)
 
-### 순수 함수 테스트
+### Day 1: Core Client Structure
+1. **Setup test environment**: Client test fixtures
+2. **Write initialization tests**: Server validation, binary detection
+3. **Implement basic FRPClient**: Constructor and validation
+4. **Binary detection**: find_frp_binary method
 
-1. **클라이언트 생성 테스트**
-   ```python
-   def test_create_client():
-       result = create_client("example.com", 7000, "secret123")
-       
-       assert result.is_ok()
-       client = result.unwrap()
-       assert client.server.host == "example.com"
-       assert client.server.port == 7000
-       assert client.auth_token.value == "secret123"
-       assert client.connection_state.status == "disconnected"
-   ```
+### Day 2: Connection Management
+1. **Write connection tests**: Success and failure cases
+2. **Implement connect/disconnect**: Process management integration
+3. **Authentication tests**: Token-based auth validation
+4. **Error handling**: Connection and auth failures
 
-2. **연결 상태 전환 테스트**
-   ```python
-   def test_client_state_transitions():
-       # 클라이언트 생성
-       client = create_client("example.com").unwrap()
-       process_id = ProcessId("test-process")
-       
-       # 연결 테스트
-       connected_client, event = connect_client(client, process_id, "/tmp/config.ini")
-       assert connected_client.connection_state.status == "connected"
-       assert connected_client.process_id == process_id
-       assert isinstance(event, ClientConnected)
-       
-       # 연결 해제 테스트
-       disconnected_client, event = disconnect_client(connected_client, "test complete")
-       assert disconnected_client.connection_state.status == "disconnected"
-       assert disconnected_client.process_id is None
-       assert isinstance(event, ClientDisconnected)
-   ```
+### Day 3: Context Manager & Polish
+1. **Context manager tests**: Enter/exit behavior
+2. **Implement context manager**: Automatic cleanup
+3. **Integration tests**: Real FRP binary testing
+4. **Edge cases**: Exception handling, cleanup
 
-3. **설정 생성 테스트**
-   ```python
-   def test_build_client_config():
-       client = create_client("example.com", 7000, "secret").unwrap()
-       config = build_client_config(client)
-       
-       assert config['common']['server_addr'] == "example.com"
-       assert config['common']['server_port'] == 7000
-       assert config['common']['token'] == "secret"
-   ```
-
-### 속성 기반 테스트
-
-```python
-from hypothesis import given, strategies as st
-
-@given(
-    server=st.text(min_size=1, max_size=255),
-    port=st.integers(min_value=1, max_value=65535),
-    token=st.text(min_size=0, max_size=100)
-)
-def test_client_creation_properties(server, port, token):
-    """유효한 입력에 대한 클라이언트 생성"""
-    result = create_client(server, port, token if token else None)
-    
-    # 유효한 서버 주소인 경우
-    if server and not server.isspace():
-        assert result.is_ok()
-        client = result.unwrap()
-        assert client.server.host == server
-        assert client.server.port == port
-        if token:
-            assert client.auth_token.value == token
-    else:
-        assert result.is_err()
+## File Structure
 ```
-
-### 이펙트 모킹 테스트
-
-```python
-from unittest.mock import Mock
-from src.domain.types import Ok, Err
-
-def test_client_service_with_mocks():
-    # Mock 생성
-    binary_searcher = Mock(spec=BinarySearcher)
-    binary_searcher.file_exists.return_value = True
-    binary_searcher.is_executable.return_value = True
-    
-    process_executor = Mock(spec=ProcessExecutor)
-    process_executor.spawn.return_value = Ok(12345)
-    
-    file_writer = Mock(spec=FileWriter)
-    file_writer.write_temp.return_value = Ok("/tmp/test.ini")
-    
-    event_store = Mock(spec=EventStore)
-    
-    # 서비스 테스트
-    service = ClientService(
-        binary_searcher=binary_searcher,
-        process_executor=process_executor,
-        file_writer=file_writer,
-        event_store=event_store
-    )
-    
-    result = service.create_and_connect("example.com", 7000, "secret")
-    
-    assert result.is_ok()
-    client = result.unwrap()
-    assert client.connection_state.status == "connected"
-    assert binary_searcher.file_exists.called
-    assert process_executor.spawn.called
-    assert file_writer.write_temp.called
-```
-
-### 통합 테스트
-
-1. **실제 서버 연결**
-   - Docker 컨테이너에서 FRP 서버 실행
-   - 실제 frpc 바이너리로 연결 테스트
-   - 연결 상태 확인
-
-2. **재연결 시나리오**
-   - 연결 후 프로세스 종료
-   - 재연결 시도
-   - 상태 복원 확인
-
-## 파일 구조
-```
-src/
-├── domain/
-│   ├── __init__.py
-│   ├── client.py           # Client, ConnectionState, ServerAddress
-│   └── events.py           # ClientCreated, ClientConnected
-├── core/
-│   ├── __init__.py
-│   ├── client_operations.py  # 클라이언트 관련 순수 함수
-│   └── binary_finder.py       # 바이너리 탐색 순수 함수
-├── effects/
-│   ├── __init__.py
-│   ├── protocols.py        # BinarySearcher, ConnectionValidator
-│   └── binary_effects.py   # FilesystemSearcher 구현
-├── application/
-│   ├── __init__.py
-│   └── client_service.py   # ClientService (조합)
-└── api/
-    ├── __init__.py
-    └── client.py           # 공개 API
+src/frp_wrapper/
+├── __init__.py
+├── client.py           # FRPClient class
+├── config.py           # ConfigBuilder class
+├── process.py          # ProcessManager (from checkpoint 1)
+└── exceptions.py       # Custom exceptions
 
 tests/
 ├── __init__.py
-├── test_domain/
-│   └── test_client.py      # 도메인 모델 테스트
-├── test_core/
-│   ├── test_client_operations.py  # 순수 함수 테스트
-│   └── test_binary_finder.py      # 바이너리 탐색 테스트
-└── test_application/
-    └── test_client_service.py      # 서비스 테스트
+├── test_client.py      # Unit tests
+├── test_config.py      # Config builder tests
+└── test_client_integration.py  # Integration tests
 ```
 
-## 완료 기준
+## Success Criteria
+- [ ] 100% test coverage for FRPClient
+- [ ] All connection scenarios tested
+- [ ] Context manager works correctly
+- [ ] Authentication handled properly
+- [ ] Binary detection robust
+- [ ] Clean error messages
+- [ ] Integration tests pass
 
-### 필수 기능
-- [x] 클라이언트 도메인 모델 정의
-- [x] 클라이언트 연결 순수 함수
-- [x] 바이너리 탐색 순수 함수
-- [x] 이펙트 인터페이스 정의
-- [x] Result 타입 기반 에러 처리
+## Key TDD Principles
+1. **Test-First**: Every feature starts with failing test
+2. **Simple API**: Intuitive methods, clear behavior
+3. **Mock Dependencies**: Process and config management
+4. **Real Integration**: Test with actual FRP binary
+5. **Exception Safety**: Proper cleanup and error handling
 
-### 테스트
-- [x] 순수 함수 단위 테스트
-- [x] 속성 기반 테스트
-- [x] 이펙트 모킹 테스트
-- [x] 상태 전환 검증
-
-### 문서
-- [x] 모든 함수에 타입 힌트와 docstring
-- [x] 함수형 사용 예제
-- [x] 도메인 모델 설명
-
-## 예상 작업 시간
-- 도메인 모델 설계: 3시간
-- 순수 함수 구현: 4시간
-- 이펙트 인터페이스 및 구현: 3시간
-- 서비스 계층 구현: 4시간
-- 테스트 작성: 4시간
-- 문서화: 2시간
-
-**총 예상 시간**: 20시간 (4일)
-
-## 다음 단계 준비
-- Tunnel 도메인 모델 설계
-- 터널 생성 순수 함수 구현
-- 동적 설정 업데이트 방안
-
-## 참고 사항
-- 클라이언트 상태는 완전히 불변
-- 모든 상태 변경은 새 인스턴스 생성
-- 이펙트는 최소화하고 명시적으로 관리
-- Result 타입으로 모든 실패 가능성 표현
-- 함수 조합으로 복잡한 로직 구성
+This approach creates a user-friendly client API while maintaining comprehensive test coverage and robust error handling.

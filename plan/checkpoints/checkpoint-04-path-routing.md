@@ -1,362 +1,677 @@
-# Checkpoint 4: 경로 기반 라우팅
+# Checkpoint 4: Path-Based Routing with Pydantic (TDD Approach)
 
-## 개요
-FRP의 네이티브 `locations` 기능을 활용하여 HTTP 터널을 경로 기반으로 노출하는 핵심 기능을 구현합니다. `https://example.com/myapp/` 형태로 서비스를 접근 가능하게 만듭니다.
+## Overview
+TDD와 Pydantic v2를 활용하여 FRP의 네이티브 `locations` 기능을 사용한 강력한 경로 기반 라우팅 시스템을 구현합니다. HTTP 터널을 경로별로 노출하는 핵심 기능을 제공합니다.
 
-## 목표
-- FRP locations 파라미터를 활용한 경로 기반 라우팅
+## Goals
+- FRP locations 파라미터 활용한 경로 기반 라우팅
+- Pydantic 기반 HTTP 터널 설정 및 검증
 - customDomains와 locations 조합으로 직접 라우팅
-- 경로 변환 옵션 지원
-- WebSocket 지원
+- WebSocket 지원 및 경로 변환 옵션
+- 완전한 TDD 커버리지
 
-## 구현 범위
+## Test-First Implementation with Pydantic
 
-### 1. HTTP 터널 설정
+### 1. Enhanced HTTP Tunnel Models
 ```python
-@dataclass
-class HTTPTunnelConfig(TunnelConfig):
-    """HTTP 터널 전용 설정"""
-    path: str                    # 경로 (예: "myapp")
-    custom_domains: List[str]    # 커스텀 도메인 (예: ["example.com"])
-    locations: List[str]         # 위치 경로 (예: ["/myapp"])
-    strip_path: bool = True      # 경로 제거 여부
-    websocket: bool = True       # WebSocket 지원
-    custom_headers: Dict[str, str] = field(default_factory=dict)
-    
-class HTTPTunnel(Tunnel):
-    """HTTP 터널 클래스"""
-    
-    @property
-    def url(self) -> str:
-        """완전한 접속 URL을 반환합니다"""
-        if self.config.custom_domains and self.config.locations:
-            domain = self.config.custom_domains[0]
-            location = self.config.locations[0]
-            return f"https://{domain}{location}/"
-        return None
-        
-    @property
-    def domain(self) -> str:
-        """사용 중인 도메인을 반환합니다"""
-        return self.config.custom_domains[0] if self.config.custom_domains else None
-```
+# src/frp_wrapper/http_tunnel.py
+from datetime import datetime
+from enum import Enum
+from typing import Optional, List, Dict, Any, Literal
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from pydantic import HttpUrl, AnyHttpUrl
+from .tunnel import BaseTunnel, TunnelType, TunnelStatus
 
-### 2. FRPClient 확장
-```python
-class FRPClient:
-    # 기존 메서드들...
-    
-    def expose_path(
-        self,
-        local_port: int,
-        path: str,
-        strip_path: bool = True,
-        websocket: bool = True,
-        custom_headers: Optional[Dict[str, str]] = None,
-        **options
-    ) -> HTTPTunnel:
-        """로컬 서비스를 서브패스로 노출합니다"""
-        
-    def expose_http(
-        self,
-        local_port: int,
-        subdomain: Optional[str] = None,
-        custom_domains: Optional[List[str]] = None,
-        **options
-    ) -> HTTPTunnel:
-        """로컬 서비스를 HTTP로 노출합니다 (기존 방식)"""
-        
-    # 내부 메서드
-    def _create_http_tunnel_config(
-        self,
-        local_port: int,
-        path: str,
-        **options
-    ) -> HTTPTunnelConfig
-    
-    def _generate_tunnel_name(self, path: str) -> str:
-        """경로를 위한 터널명 생성"""
-```
+class PathRewriteMode(str, Enum):
+    """Path rewrite modes for HTTP tunnels"""
+    STRIP = "strip"      # Remove path prefix
+    PRESERVE = "preserve"  # Keep full path
+    REWRITE = "rewrite"   # Custom rewrite rules
 
-### 3. FRP 설정 생성기
-```python
-class FRPConfigGenerator:
-    """FRP TOML 설정을 생성하는 유틸리티"""
-    
-    def __init__(self, server_addr: str, server_port: int = 7000):
-        self.server_addr = server_addr
-        self.server_port = server_port
-        
-    def generate_http_proxy(self, name: str, local_port: int, 
-                           custom_domains: List[str], locations: List[str]) -> str:
-        """HTTP 프록시 설정 생성"""
-        
-    def generate_full_config(self, proxies: List[Dict]) -> str:
-        """전체 FRP 클라이언트 설정 파일 생성"""
-```
+class HTTPHeaders(BaseModel):
+    """Pydantic model for HTTP headers configuration"""
 
-## 테스트 시나리오
-
-### 유닛 테스트
-
-1. **서브패스 터널 생성**
-   ```python
-   def test_create_path_tunnel():
-       client = FRPClient("tunnel.example.com")
-       client.connect()
-       
-       tunnel = client.expose_path(3000, "myapp")
-       
-       assert isinstance(tunnel, HTTPTunnel)
-       assert tunnel.url == "https://tunnel.example.com/myapp/"
-       assert tunnel.config.custom_domains == ["tunnel.example.com"]
-       assert tunnel.config.locations == ["/myapp"]
-   ```
-
-2. **strip_path 옵션**
-   ```python
-   def test_strip_path_option():
-       # strip_path=True (기본값)
-       tunnel1 = client.expose_path(3000, "api", strip_path=True)
-       config1 = get_tunnel_config(tunnel1.id)
-       assert config1['locations'] == ["/"]  # /api 제거됨
-       
-       # strip_path=False
-       tunnel2 = client.expose_path(3001, "api", strip_path=False)
-       config2 = get_tunnel_config(tunnel2.id)
-       assert config2['locations'] == ["/api"]  # /api 유지됨
-   ```
-
-3. **커스텀 헤더**
-   ```python
-   def test_custom_headers():
-       headers = {
-           "X-Forwarded-Path": "/myapp",
-           "X-Custom-Header": "value"
-       }
-       
-       tunnel = client.expose_path(
-           3000, 
-           "myapp",
-           custom_headers=headers
-       )
-       
-       config = get_tunnel_config(tunnel.id)
-       assert config['headers'] == headers
-   ```
-
-4. **FRP 설정 생성**
-   ```python
-   def test_frp_config_generation():
-       generator = FRPConfigGenerator("tunnel.example.com", 7000)
-       
-       proxy_config = generator.generate_http_proxy(
-           "myapp", 3000, ["tunnel.example.com"], ["/myapp"]
-       )
-       
-       assert "customDomains = [\"tunnel.example.com\"]" in proxy_config
-       assert "locations = [\"/myapp\"]" in proxy_config
-       assert "localPort = 3000" in proxy_config
-   ```
-
-### 통합 테스트
-
-1. **실제 HTTP 서비스 테스트**
-   ```python
-   @pytest.mark.integration
-   def test_real_http_tunnel():
-       # Flask 앱 시작
-       app = create_test_flask_app()
-       app_thread = threading.Thread(
-           target=lambda: app.run(port=3000)
-       )
-       app_thread.start()
-       
-       # 터널 생성
-       client = FRPClient("localhost")
-       client.connect()
-       tunnel = client.expose_path(3000, "testapp")
-       
-       # HTTP 요청 테스트
-       response = requests.get(f"{tunnel.url}api/test")
-       assert response.status_code == 200
-       assert response.json()['message'] == 'Hello from test app'
-   ```
-
-2. **WebSocket 지원 테스트**
-   ```python
-   def test_websocket_support():
-       # WebSocket 서버 시작
-       ws_server = start_websocket_server(3000)
-       
-       # 터널 생성
-       tunnel = client.expose_path(3000, "ws", websocket=True)
-       
-       # WebSocket 연결 테스트
-       ws = websocket.WebSocket()
-       ws.connect(f"wss://example.com/ws/")
-       ws.send("Hello")
-       
-       assert ws.recv() == "Echo: Hello"
-   ```
-
-## 구현 상세
-
-### expose_path 구현
-```python
-def expose_path(
-    self,
-    local_port: int,
-    path: str,
-    strip_path: bool = True,
-    **options
-) -> HTTPTunnel:
-    """로컬 서비스를 서브패스로 노출합니다"""
-    
-    # 1. 경로 검증
-    if not path or path.startswith('/'):
-        raise ValueError("Path must not start with '/'")
-    
-    # 2. 도메인 가져오기 (기본값 또는 설정에서)
-    domain = options.get('domain', self.default_domain)
-    
-    # 3. HTTP 터널 설정 생성
-    config = HTTPTunnelConfig(
-        local_port=local_port,
-        tunnel_type='http',
-        path=path,
-        custom_domains=[domain],
-        locations=[f'/{path}'],
-        strip_path=strip_path,
-        websocket=options.get('websocket', True),
-        custom_headers=options.get('custom_headers', {})
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra='forbid'
     )
-    
-    # 4. FRP 설정 구성 (locations 기능 사용)
-    frp_config = {
-        'type': 'http',
-        'localPort': local_port,
-        'customDomains': [domain],
-        'locations': [f'/{path}'],  # FRP 네이티브 기능!
-        'useCompression': True,
-        'useEncryption': True
-    }
-    
-    # 5. 경로 재작성 설정 (선택사항)
-    if strip_path:
-        # 로컬 서비스에서 경로 제거 처리를 원하는 경우
-        # 헤더를 통해 원본 경로 정보 전달
-        frp_config['hostHeaderRewrite'] = '127.0.0.1'
-        frp_config['requestHeaders'] = {
-            'set': {'X-Original-Path': f'/{path}'}
+
+    set_headers: Dict[str, str] = Field(default_factory=dict, description="Headers to set")
+    remove_headers: List[str] = Field(default_factory=list, description="Headers to remove")
+    host_header_rewrite: Optional[str] = Field(None, description="Rewrite Host header")
+
+    @field_validator('set_headers')
+    @classmethod
+    def validate_header_names(cls, v: Dict[str, str]) -> Dict[str, str]:
+        """Validate HTTP header names"""
+        for header_name in v.keys():
+            if not header_name.replace('-', '').replace('_', '').isalnum():
+                raise ValueError(f"Invalid header name: {header_name}")
+        return v
+
+class HTTPTunnelConfig(BaseModel):
+    """Advanced HTTP tunnel configuration with Pydantic validation"""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra='forbid'
+    )
+
+    # Core path routing
+    path: str = Field(..., min_length=1, max_length=100, description="URL path for routing")
+    custom_domains: List[str] = Field(..., min_items=1, description="Custom domains for tunnel")
+
+    # Path handling
+    path_rewrite_mode: PathRewriteMode = Field(default=PathRewriteMode.STRIP, description="How to handle path in requests")
+    path_rewrite_rules: Dict[str, str] = Field(default_factory=dict, description="Custom path rewrite rules")
+
+    # HTTP features
+    websocket: bool = Field(default=True, description="Enable WebSocket support")
+    compression: bool = Field(default=True, description="Enable compression")
+    encryption: bool = Field(default=True, description="Enable encryption")
+
+    # Headers and routing
+    headers: HTTPHeaders = Field(default_factory=HTTPHeaders, description="HTTP headers configuration")
+    basic_auth: Optional[str] = Field(None, description="Basic auth credentials (user:pass)")
+
+    # Advanced routing
+    subdomain_host: Optional[str] = Field(None, description="Subdomain host for routing")
+    router_by_http_user: Optional[str] = Field(None, description="Route by HTTP user")
+
+    @field_validator('path')
+    @classmethod
+    def validate_path_format(cls, v: str) -> str:
+        """Validate path format for FRP locations"""
+        if v.startswith('/'):
+            raise ValueError("Path should not start with '/' - it will be added automatically")
+
+        if v.endswith('/'):
+            v = v.rstrip('/')
+
+        # Allow alphanumeric, hyphens, underscores, and forward slashes for nested paths
+        allowed_chars = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/')
+        if not set(v).issubset(allowed_chars):
+            raise ValueError("Path contains invalid characters. Use only alphanumeric, hyphens, underscores, and slashes")
+
+        return v
+
+    @field_validator('custom_domains')
+    @classmethod
+    def validate_domains(cls, v: List[str]) -> List[str]:
+        """Validate domain names"""
+        for domain in v:
+            if not domain or '.' not in domain:
+                raise ValueError(f"Invalid domain format: {domain}")
+            # Basic domain validation
+            parts = domain.split('.')
+            for part in parts:
+                if not part or not part.replace('-', '').isalnum():
+                    raise ValueError(f"Invalid domain part in: {domain}")
+        return v
+
+    @field_validator('basic_auth')
+    @classmethod
+    def validate_basic_auth(cls, v: Optional[str]) -> Optional[str]:
+        """Validate basic auth format"""
+        if v is not None and ':' not in v:
+            raise ValueError("Basic auth must be in format 'username:password'")
+        return v
+
+    @property
+    def locations(self) -> List[str]:
+        """Generate FRP locations configuration"""
+        return [f"/{self.path}"]
+
+    @property
+    def frp_config(self) -> Dict[str, Any]:
+        """Generate FRP proxy configuration"""
+        config = {
+            "type": "http",
+            "customDomains": self.custom_domains,
+            "locations": self.locations,
+            "useCompression": self.compression,
+            "useEncryption": self.encryption
         }
-    
-    # 6. 헤더 설정
-    if config.custom_headers:
-        frp_config['headers'] = config.custom_headers
-    
-    # 7. 터널 생성 (기존 프로세스 활용)
-    tunnel_id = self._generate_tunnel_id()
-    self._config_builder.add_tunnel(tunnel_id, frp_config)
-    
-    # 8. HTTPTunnel 객체 생성
-    tunnel = HTTPTunnel(tunnel_id, config, self)
-    self._tunnel_manager.add_tunnel(tunnel)
-    
-    # 9. 설정 적용
-    self._update_config_and_restart()
-    
-    # 10. 연결 확인
-    if self._wait_for_tunnel_ready(tunnel_id):
-        tunnel.status = TunnelStatus.CONNECTED
-    
-    return tunnel
+
+        # Add WebSocket support
+        if self.websocket:
+            config["websocket"] = True
+
+        # Add headers configuration
+        if self.headers.set_headers:
+            config["requestHeaders"] = {"set": self.headers.set_headers}
+
+        if self.headers.host_header_rewrite:
+            config["hostHeaderRewrite"] = self.headers.host_header_rewrite
+
+        # Add authentication
+        if self.basic_auth:
+            config["httpUser"], config["httpPwd"] = self.basic_auth.split(':', 1)
+
+        # Add path rewriting
+        if self.path_rewrite_mode == PathRewriteMode.REWRITE and self.path_rewrite_rules:
+            config["pathRewrite"] = self.path_rewrite_rules
+
+        return config
+
+class AdvancedHTTPTunnel(BaseTunnel):
+    """Enhanced HTTP tunnel with advanced path routing"""
+
+    tunnel_type: TunnelType = Field(default=TunnelType.HTTP, frozen=True)
+    config: HTTPTunnelConfig = Field(..., description="HTTP tunnel configuration")
+
+    @property
+    def url(self) -> Optional[str]:
+        """Get tunnel URL with proper path handling"""
+        if self.status == TunnelStatus.CONNECTED and self.config.custom_domains:
+            domain = self.config.custom_domains[0]
+            path = self.config.path
+
+            # Use HTTPS by default for custom domains
+            return f"https://{domain}/{path}/"
+        return None
+
+    @property
+    def urls(self) -> List[str]:
+        """Get all possible URLs for this tunnel"""
+        if self.status != TunnelStatus.CONNECTED:
+            return []
+
+        urls = []
+        for domain in self.config.custom_domains:
+            urls.append(f"https://{domain}/{self.config.path}/")
+
+        return urls
+
+    @property
+    def websocket_url(self) -> Optional[str]:
+        """Get WebSocket URL if WebSocket is enabled"""
+        if not self.config.websocket or self.status != TunnelStatus.CONNECTED:
+            return None
+
+        if self.config.custom_domains:
+            domain = self.config.custom_domains[0]
+            path = self.config.path
+            return f"wss://{domain}/{path}/"
+
+        return None
+
+    def get_curl_command(self) -> Optional[str]:
+        """Generate curl command for testing the tunnel"""
+        if not self.url:
+            return None
+
+        cmd = f"curl -v {self.url}"
+
+        if self.config.basic_auth:
+            username, password = self.config.basic_auth.split(':', 1)
+            cmd += f" -u {username}:{password}"
+
+        return cmd
+
+class PathMatcher(BaseModel):
+    """Pydantic model for path matching and routing"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    pattern: str = Field(..., description="Path pattern to match")
+    tunnel_id: str = Field(..., description="Tunnel ID to route to")
+    priority: int = Field(default=0, description="Matching priority (higher = more priority)")
+
+    @field_validator('pattern')
+    @classmethod
+    def validate_pattern(cls, v: str) -> str:
+        """Validate path pattern"""
+        if not v.startswith('/'):
+            v = '/' + v
+        return v
+
+    def matches(self, path: str) -> bool:
+        """Check if path matches this pattern"""
+        import fnmatch
+        return fnmatch.fnmatch(path, self.pattern)
+
+class RoutingTable(BaseModel):
+    """Pydantic model for managing routing table"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    matchers: List[PathMatcher] = Field(default_factory=list)
+    default_tunnel: Optional[str] = Field(None, description="Default tunnel for unmatched paths")
+
+    def add_route(self, pattern: str, tunnel_id: str, priority: int = 0) -> None:
+        """Add route to routing table"""
+        matcher = PathMatcher(pattern=pattern, tunnel_id=tunnel_id, priority=priority)
+        self.matchers.append(matcher)
+        # Sort by priority (descending)
+        self.matchers.sort(key=lambda m: m.priority, reverse=True)
+
+    def find_tunnel(self, path: str) -> Optional[str]:
+        """Find tunnel ID for given path"""
+        for matcher in self.matchers:
+            if matcher.matches(path):
+                return matcher.tunnel_id
+
+        return self.default_tunnel
+
+    def get_routes_for_tunnel(self, tunnel_id: str) -> List[str]:
+        """Get all route patterns for a tunnel"""
+        return [m.pattern for m in self.matchers if m.tunnel_id == tunnel_id]
 ```
 
-### FRP TOML 설정 템플릿
+### 2. Test Structure for Path Routing
 ```python
-FRP_PROXY_TEMPLATE = """
-[[proxies]]
-name = "{name}"
-type = "http"
-localPort = {local_port}
-customDomains = ["{domain}"]
-locations = ["{location}"]
+# tests/test_http_tunnel.py
+import pytest
+from pydantic import ValidationError
+from frp_wrapper.http_tunnel import (
+    HTTPTunnelConfig, AdvancedHTTPTunnel, HTTPHeaders,
+    PathRewriteMode, PathMatcher, RoutingTable
+)
+from frp_wrapper.tunnel import TunnelType, TunnelStatus
 
-# 선택사항: 경로 리라이트
-# pathRewrite = {{ "{location}" = "/" }}
+class TestHTTPTunnelConfig:
+    def test_config_creation_with_valid_data(self):
+        """Test HTTP tunnel config creation with Pydantic validation"""
+        config = HTTPTunnelConfig(
+            path="myapp",
+            custom_domains=["example.com", "app.example.com"]
+        )
 
-# 선택사항: 커스텀 헤더
-# [proxies.requestHeaders.set]
-# "X-Forwarded-Path" = "{location}"
-# "X-Real-IP" = "$remote_addr"
+        assert config.path == "myapp"
+        assert config.custom_domains == ["example.com", "app.example.com"]
+        assert config.websocket is True  # Default
+        assert config.compression is True  # Default
+        assert config.path_rewrite_mode == PathRewriteMode.STRIP
 
-# 선택사항: WebSocket 지원 (기본 활성화)
-# websocket = true
-"""
+    def test_path_validation_errors(self):
+        """Test path validation with various invalid inputs"""
+        # Path starting with /
+        with pytest.raises(ValidationError, match="should not start with"):
+            HTTPTunnelConfig(path="/myapp", custom_domains=["example.com"])
+
+        # Invalid characters
+        with pytest.raises(ValidationError, match="invalid characters"):
+            HTTPTunnelConfig(path="my@app", custom_domains=["example.com"])
+
+        # Empty path
+        with pytest.raises(ValidationError):
+            HTTPTunnelConfig(path="", custom_domains=["example.com"])
+
+        # Path too long
+        with pytest.raises(ValidationError):
+            HTTPTunnelConfig(path="a" * 101, custom_domains=["example.com"])
+
+    def test_domain_validation(self):
+        """Test domain validation with Pydantic validators"""
+        # Valid domains
+        config = HTTPTunnelConfig(
+            path="app",
+            custom_domains=["example.com", "sub.example.com", "app-1.example.org"]
+        )
+        assert len(config.custom_domains) == 3
+
+        # Invalid domains
+        with pytest.raises(ValidationError, match="Invalid domain"):
+            HTTPTunnelConfig(path="app", custom_domains=["invalid"])
+
+        with pytest.raises(ValidationError, match="Invalid domain"):
+            HTTPTunnelConfig(path="app", custom_domains=[""])
+
+        # Empty domains list
+        with pytest.raises(ValidationError):
+            HTTPTunnelConfig(path="app", custom_domains=[])
+
+    def test_basic_auth_validation(self):
+        """Test basic auth validation"""
+        # Valid basic auth
+        config = HTTPTunnelConfig(
+            path="app",
+            custom_domains=["example.com"],
+            basic_auth="user:password"
+        )
+        assert config.basic_auth == "user:password"
+
+        # Invalid basic auth (no colon)
+        with pytest.raises(ValidationError, match="username:password"):
+            HTTPTunnelConfig(
+                path="app",
+                custom_domains=["example.com"],
+                basic_auth="userpassword"
+            )
+
+    def test_frp_config_generation(self):
+        """Test FRP configuration generation"""
+        config = HTTPTunnelConfig(
+            path="myapp",
+            custom_domains=["example.com"],
+            websocket=True,
+            compression=False,
+            basic_auth="user:pass"
+        )
+
+        frp_config = config.frp_config
+
+        assert frp_config["type"] == "http"
+        assert frp_config["customDomains"] == ["example.com"]
+        assert frp_config["locations"] == ["/myapp"]
+        assert frp_config["websocket"] is True
+        assert frp_config["useCompression"] is False
+        assert frp_config["httpUser"] == "user"
+        assert frp_config["httpPwd"] == "pass"
+
+class TestHTTPHeaders:
+    def test_headers_creation(self):
+        """Test HTTP headers model creation"""
+        headers = HTTPHeaders(
+            set_headers={"X-Custom": "value", "X-App-Name": "MyApp"},
+            remove_headers=["Server", "X-Powered-By"],
+            host_header_rewrite="backend.internal"
+        )
+
+        assert headers.set_headers["X-Custom"] == "value"
+        assert "Server" in headers.remove_headers
+        assert headers.host_header_rewrite == "backend.internal"
+
+    def test_header_name_validation(self):
+        """Test header name validation"""
+        # Valid header names
+        headers = HTTPHeaders(set_headers={
+            "X-Custom": "value",
+            "Content-Type": "application/json",
+            "X_Custom_Header": "value"
+        })
+        assert len(headers.set_headers) == 3
+
+        # Invalid header names
+        with pytest.raises(ValidationError, match="Invalid header name"):
+            HTTPHeaders(set_headers={"Invalid@Header": "value"})
+
+class TestAdvancedHTTPTunnel:
+    def test_tunnel_creation(self):
+        """Test advanced HTTP tunnel creation"""
+        config = HTTPTunnelConfig(
+            path="myapp",
+            custom_domains=["example.com"]
+        )
+
+        tunnel = AdvancedHTTPTunnel(
+            id="http-tunnel-1",
+            local_port=3000,
+            config=config
+        )
+
+        assert tunnel.tunnel_type == TunnelType.HTTP
+        assert tunnel.config.path == "myapp"
+        assert tunnel.local_port == 3000
+
+    def test_url_generation(self):
+        """Test URL generation for different states"""
+        config = HTTPTunnelConfig(
+            path="myapp",
+            custom_domains=["example.com"]
+        )
+
+        tunnel = AdvancedHTTPTunnel(
+            id="test",
+            local_port=3000,
+            config=config
+        )
+
+        # No URL when not connected
+        assert tunnel.url is None
+        assert tunnel.urls == []
+
+        # URL available when connected
+        connected_tunnel = tunnel.with_status(TunnelStatus.CONNECTED)
+        assert connected_tunnel.url == "https://example.com/myapp/"
+        assert "https://example.com/myapp/" in connected_tunnel.urls
+
+    def test_websocket_url_generation(self):
+        """Test WebSocket URL generation"""
+        config = HTTPTunnelConfig(
+            path="ws",
+            custom_domains=["example.com"],
+            websocket=True
+        )
+
+        tunnel = AdvancedHTTPTunnel(
+            id="ws-tunnel",
+            local_port=3000,
+            config=config
+        ).with_status(TunnelStatus.CONNECTED)
+
+        assert tunnel.websocket_url == "wss://example.com/ws/"
+
+        # No WebSocket URL when disabled
+        config_no_ws = HTTPTunnelConfig(
+            path="app",
+            custom_domains=["example.com"],
+            websocket=False
+        )
+
+        tunnel_no_ws = AdvancedHTTPTunnel(
+            id="no-ws",
+            local_port=3000,
+            config=config_no_ws
+        ).with_status(TunnelStatus.CONNECTED)
+
+        assert tunnel_no_ws.websocket_url is None
+
+    def test_curl_command_generation(self):
+        """Test curl command generation for testing"""
+        config = HTTPTunnelConfig(
+            path="api",
+            custom_domains=["api.example.com"],
+            basic_auth="admin:secret"
+        )
+
+        tunnel = AdvancedHTTPTunnel(
+            id="api-tunnel",
+            local_port=8000,
+            config=config
+        ).with_status(TunnelStatus.CONNECTED)
+
+        curl_cmd = tunnel.get_curl_command()
+
+        assert "curl -v https://api.example.com/api/" in curl_cmd
+        assert "-u admin:secret" in curl_cmd
+
+class TestPathMatcher:
+    def test_matcher_creation(self):
+        """Test path matcher creation with validation"""
+        matcher = PathMatcher(
+            pattern="api/*",
+            tunnel_id="api-tunnel",
+            priority=10
+        )
+
+        assert matcher.pattern == "/api/*"  # Auto-adds leading slash
+        assert matcher.tunnel_id == "api-tunnel"
+        assert matcher.priority == 10
+
+    def test_path_matching(self):
+        """Test path matching logic"""
+        matcher = PathMatcher(pattern="/api/*", tunnel_id="api-tunnel")
+
+        assert matcher.matches("/api/users")
+        assert matcher.matches("/api/posts/123")
+        assert not matcher.matches("/app/users")
+        assert not matcher.matches("/api")  # Doesn't match without trailing content
+
+class TestRoutingTable:
+    def test_routing_table_operations(self):
+        """Test routing table operations"""
+        table = RoutingTable()
+
+        # Add routes
+        table.add_route("/api/*", "api-tunnel", priority=10)
+        table.add_route("/app/*", "app-tunnel", priority=5)
+        table.add_route("/admin/*", "admin-tunnel", priority=15)
+
+        # Test routing (should match by priority)
+        assert table.find_tunnel("/api/users") == "api-tunnel"
+        assert table.find_tunnel("/app/dashboard") == "app-tunnel"
+        assert table.find_tunnel("/admin/settings") == "admin-tunnel"
+
+        # Test default tunnel
+        table.default_tunnel = "default-tunnel"
+        assert table.find_tunnel("/unknown/path") == "default-tunnel"
+
+    def test_route_priority_ordering(self):
+        """Test that routes are ordered by priority"""
+        table = RoutingTable()
+
+        # Add routes in random order
+        table.add_route("/api/v1/*", "api-v1", priority=5)
+        table.add_route("/api/*", "api-general", priority=1)  # Lower priority
+        table.add_route("/api/admin/*", "api-admin", priority=10)  # Higher priority
+
+        # More specific route should match first due to higher priority
+        assert table.find_tunnel("/api/admin/users") == "api-admin"
+        assert table.find_tunnel("/api/v1/posts") == "api-v1"
+        assert table.find_tunnel("/api/general") == "api-general"
+
+# Integration tests with FRP configuration
+class TestFRPIntegration:
+    def test_frp_config_export(self):
+        """Test exporting tunnel configuration for FRP"""
+        config = HTTPTunnelConfig(
+            path="myapp",
+            custom_domains=["example.com"],
+            websocket=True,
+            headers=HTTPHeaders(
+                set_headers={"X-App": "MyApp"},
+                host_header_rewrite="localhost"
+            )
+        )
+
+        frp_config = config.frp_config
+
+        # Verify FRP-compatible configuration
+        assert frp_config["type"] == "http"
+        assert frp_config["customDomains"] == ["example.com"]
+        assert frp_config["locations"] == ["/myapp"]
+        assert frp_config["websocket"] is True
+        assert frp_config["requestHeaders"]["set"]["X-App"] == "MyApp"
+        assert frp_config["hostHeaderRewrite"] == "localhost"
+
+    def test_complex_routing_scenario(self):
+        """Test complex routing scenario with multiple tunnels"""
+        # Create multiple tunnel configs
+        api_config = HTTPTunnelConfig(
+            path="api",
+            custom_domains=["api.example.com"],
+            basic_auth="api:secret"
+        )
+
+        app_config = HTTPTunnelConfig(
+            path="app",
+            custom_domains=["app.example.com"],
+            websocket=True
+        )
+
+        admin_config = HTTPTunnelConfig(
+            path="admin",
+            custom_domains=["admin.example.com"],
+            basic_auth="admin:supersecret",
+            headers=HTTPHeaders(set_headers={"X-Admin": "true"})
+        )
+
+        # Create tunnels
+        api_tunnel = AdvancedHTTPTunnel(
+            id="api-tunnel",
+            local_port=8000,
+            config=api_config
+        ).with_status(TunnelStatus.CONNECTED)
+
+        app_tunnel = AdvancedHTTPTunnel(
+            id="app-tunnel",
+            local_port=3000,
+            config=app_config
+        ).with_status(TunnelStatus.CONNECTED)
+
+        admin_tunnel = AdvancedHTTPTunnel(
+            id="admin-tunnel",
+            local_port=3001,
+            config=admin_config
+        ).with_status(TunnelStatus.CONNECTED)
+
+        # Verify URLs
+        assert api_tunnel.url == "https://api.example.com/api/"
+        assert app_tunnel.url == "https://app.example.com/app/"
+        assert admin_tunnel.url == "https://admin.example.com/admin/"
+
+        # Verify WebSocket URLs
+        assert api_tunnel.websocket_url is None  # WebSocket disabled by default
+        assert app_tunnel.websocket_url == "wss://app.example.com/app/"
+        assert admin_tunnel.websocket_url is None  # WebSocket disabled by default
+
+        # Verify FRP configurations
+        api_frp = api_config.frp_config
+        assert api_frp["httpUser"] == "api"
+        assert api_frp["httpPwd"] == "secret"
+
+        admin_frp = admin_config.frp_config
+        assert admin_frp["requestHeaders"]["set"]["X-Admin"] == "true"
 ```
 
-## 파일 구조
-```
-frp_wrapper/
-├── http_tunnel.py      # HTTPTunnel 클래스
-├── client.py           # expose_path 메서드 추가
-├── config_builder.py   # FRP TOML 설정 생성기
-└── path_utils.py       # 경로 관련 유틸리티
+## Implementation Timeline (TDD + Pydantic)
 
-frp_config/
-├── client.toml.template # FRP 클라이언트 설정 템플릿
-└── README.md          # FRP 설정 가이드
+### Day 1: Enhanced HTTP Models
+1. **Setup advanced Pydantic models**: HTTPTunnelConfig, HTTPHeaders
+2. **Write comprehensive validation tests**: Path, domain, auth validation
+3. **Implement custom validators**: Complex path validation, domain checking
+4. **FRP config generation**: Native locations integration
+
+### Day 2: Routing and Path Matching
+1. **Write routing tests**: PathMatcher, RoutingTable functionality
+2. **Implement path matching**: Pattern matching with priorities
+3. **Advanced tunnel features**: WebSocket URLs, curl commands
+4. **Integration tests**: Complex multi-tunnel scenarios
+
+### Day 3: Client Integration
+1. **Integrate with FRPClient**: expose_path method enhancement
+2. **Context manager support**: Automatic tunnel cleanup
+3. **Real FRP testing**: Integration with actual FRP binary
+4. **Performance optimization**: Pydantic validation performance
+
+## File Structure
+```
+src/frp_wrapper/
+├── __init__.py
+├── tunnel.py           # Base tunnel models
+├── http_tunnel.py      # Advanced HTTP tunnel models
+├── tunnel_manager.py   # Enhanced with path routing
+├── client.py           # FRPClient with expose_path
+├── process.py          # ProcessManager
+├── config.py           # ConfigBuilder with Pydantic
+└── exceptions.py       # Custom exceptions
 
 tests/
-├── test_path_routing.py
-├── test_frp_config.py  # FRP 설정 생성 테스트
-└── fixtures/
-    └── test_app.py     # 테스트용 Flask 앱
+├── __init__.py
+├── test_http_tunnel.py # HTTP tunnel tests
+├── test_path_routing.py # Routing logic tests
+├── test_frp_integration.py # FRP binary integration
+└── conftest.py         # Shared fixtures
 ```
 
-## 완료 기준
+## Success Criteria
+- [ ] 100% test coverage for HTTP tunnels and routing
+- [ ] All FRP locations configurations tested
+- [ ] Path validation handles edge cases
+- [ ] WebSocket support fully functional
+- [ ] Custom domains and headers work correctly
+- [ ] Integration with real FRP binary successful
+- [ ] Performance benchmarks meet requirements
 
-### 필수 기능
-- [ ] expose_path 메서드 구현
-- [ ] FRP locations 기능 활용
-- [ ] customDomains 지원
-- [ ] strip_path 옵션
-- [ ] 커스텀 헤더 지원
-- [ ] WebSocket 지원
+## Key Features Enabled by Pydantic
+1. **Strong Validation**: Comprehensive path and domain validation
+2. **Type Safety**: Full IDE support and mypy compatibility
+3. **Serialization**: Easy export to FRP configuration format
+4. **Documentation**: Auto-generated field documentation
+5. **Error Messages**: Clear validation error messages
+6. **Performance**: Rust-powered validation for high throughput
 
-### 테스트
-- [ ] 경로 기반 터널 생성 테스트
-- [ ] URL 생성 정확성 테스트
-- [ ] locations 파라미터 테스트
-- [ ] FRP TOML 설정 생성 테스트
-
-### 문서
-- [ ] FRP locations 기반 라우팅 설명
-- [ ] FRP 서버 설정 가이드
-- [ ] 사용 예제 코드
-
-## 예상 작업 시간
-- HTTPTunnel 구현: 2시간 (단순화됨)
-- expose_path 메서드: 2시간 (FRP 네이티브 기능 활용)
-- FRP 설정 생성기: 1시간 (TOML 생성만)
-- 테스트 작성: 3시간
-- 문서화: 2시간
-
-**총 예상 시간**: 10시간 (2.5일)
-
-## 다음 단계 준비
-- Context Manager 지원
-- 자동 리소스 정리
-- 중첩 터널 관리
-
-## 의존성
-- Checkpoint 1-3 완료
-- FRP locations 기능 이해
-- TOML 설정 포맷 지식
-
-## 주의사항
-- 경로 검증 철저히 (/ 시작하지 않도록)
-- customDomains와 locations 조합 올바른 사용
-- WebSocket 호환성 확인
-- FRP 네이티브 기능 최대 활용
+This approach leverages FRP's native `locations` feature while providing a robust, type-safe, and well-tested Python API with comprehensive validation and excellent developer experience.

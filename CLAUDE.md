@@ -5,14 +5,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project Overview
 
 FRP Python Wrapper is a self-hostable tunneling solution (like ngrok) that leverages FRP's native **locations** feature for path-based routing (https://example.com/myapp/). The design emphasizes:
-- **Functional Programming**: Immutable data structures, pure functions, explicit effects
-- **Domain-Driven Design**: Clear separation of business logic and side effects
-- **AI-Friendly Architecture**: Minimal context coupling for easier understanding
-- **Native FRP Features**: Direct use of FRP's locations parameter for simplicity
+- **Pythonic Design**: Clean, readable classes and intuitive APIs following Python conventions
+- **Test-Driven Development**: Comprehensive test coverage with tests written before implementation
+- **Simple Architecture**: Clear, minimal structure focusing on core functionality
+- **Native FRP Features**: Direct use of FRP's locations parameter for path-based routing
 
 ## Development Commands
-
-**Note**: This project is currently in the design phase. The following commands will be available once implementation begins.
 
 ### Setting up the environment
 ```bash
@@ -28,30 +26,32 @@ pre-commit install
 
 # Install FRP binary (required external dependency)
 # Download from: https://github.com/fatedier/frp/releases
-# Or use the provided installation script (to be created)
 ```
 
-### Running tests
+### Running tests (TDD Approach)
 ```bash
 # Run all tests
 pytest
 
+# Run tests with coverage (must maintain 95%+ coverage)
+pytest --cov=src --cov-report=term-missing --cov-fail-under=95
+
 # Run specific test file
-pytest tests/test_core/test_tunnel_operations.py
+pytest tests/test_client.py
 
-# Run with coverage
-pytest --cov=src --cov-report=term-missing
+# Run tests in watch mode for TDD
+pytest-watch
 
-# Run property-based tests
-pytest -k "test_properties" --hypothesis-show-statistics
+# Run tests with verbose output
+pytest -v
 ```
 
 ### Linting and type checking
 ```bash
-# Type checking
+# Type checking (required)
 mypy src/
 
-# Linting
+# Linting (required)
 ruff check src/
 
 # Auto-formatting
@@ -69,91 +69,84 @@ python -m twine upload dist/*
 
 ## Architecture Overview
 
-### Layer Structure
+### Simple Module Structure
 ```
-┌─────────────────────────────────────────┐
-│          API Layer (公개 인터페이스)      │  # Public interfaces: create_client(), expose_path()
-├─────────────────────────────────────────┤
-│     Application Layer (유스케이스)       │  # Service orchestration: TunnelService, ClientService
-├─────────────────────────────────────────┤
-│        Domain Layer (비즈니스 로직)      │  # Pure business logic: tunnel_operations, config_builder
-├─────────────────────────────────────────┤
-│      Effects Layer (부수 효과 처리)      │  # Side effect interfaces: ProcessExecutor, FileWriter
-├─────────────────────────────────────────┤
-│   Infrastructure Layer (외부 시스템)     │  # External integrations: frpc_adapter, nginx_adapter
-└─────────────────────────────────────────┘
+src/frp_wrapper/
+├── __init__.py     # Public API exports
+├── client.py       # Main FRPClient class
+├── tunnel.py       # Tunnel management classes
+├── process.py      # FRP process handling
+├── config.py       # Configuration builder
+├── exceptions.py   # Custom exceptions
+└── utils.py        # Helper functions
+
+tests/
+├── test_client.py
+├── test_tunnel.py
+├── test_process.py
+├── test_config.py
+└── test_integration.py
 ```
 
-### Key Design Patterns
+### Key Design Principles
 
-1. **Dual API Design**: Simple API for ease of use, Functional API for power users
+1. **Simple Class-Based Design**: Intuitive object-oriented API
    ```python
-   # Simple API (기본)
-   try:
-       url = create_tunnel("example.com", 3000, "/myapp")
-   except TunnelError as e:
-       print(f"Error: {e}")
-   
-   # Functional API (고급)
-   result = create_client("server.com")
-   match result:
-       case Ok(client): # handle success
-       case Err(error): # handle error
+   # Main usage pattern
+   client = FRPClient("example.com", auth_token="secret")
+   client.connect()
+
+   tunnel = client.expose_path(3000, "myapp")
+   print(f"URL: {tunnel.url}")  # https://example.com/myapp/
+
+   client.close()
    ```
 
-2. **Result Monad** (내부 구현): All internal operations use `Result[T, E]` for explicit error handling
+2. **Standard Python Exception Handling**: Clear error messages and proper exception hierarchy
 
-3. **Pipeline Pattern** (고급 기능): Function composition for complex operations
+3. **Context Manager Support**: Automatic resource cleanup
    ```python
-   pipeline = pipe(
-       create_http_tunnel,
-       flat_map_result(validate_tunnel),
-       map_result(generate_url)
-   )
+   with FRPClient("example.com") as client:
+       with client.tunnel(3000, "myapp") as tunnel:
+           print(f"URL: {tunnel.url}")
+   # Automatic cleanup
    ```
 
-4. **Event Sourcing**: All state changes tracked as immutable events
+4. **Test-Driven Development**: All code written with comprehensive test coverage
 
 ### Directory Structure
 ```
 src/
-├── frp_wrapper/
-│   ├── __init__.py      # Simple API exports (기본)
-│   ├── simple/          # Simple Python API
-│   │   ├── client.py    # 간단한 클라이언트 API
-│   │   ├── tunnel.py    # 터널 관리 함수
-│   │   └── exceptions.py # 예외 클래스
-│   ├── functional/      # Advanced Functional API
-│   │   ├── client.py    # Result 기반 클라이언트
-│   │   ├── pipeline.py  # 파이프라인 패턴
-│   │   └── result.py    # Result 타입 정의
-│   ├── domain/          # Immutable domain models
-│   ├── core/            # Pure business logic
-│   ├── effects/         # Side effect protocols
-│   ├── application/     # Service layer
-│   └── infrastructure/  # External adapters
-deploy/
-├── docker/              # Docker 관련 파일
-├── k8s/                 # Kubernetes 매니페스트
-└── systemd/             # SystemD 서비스 파일
+└── frp_wrapper/
+    ├── __init__.py      # Main API exports
+    ├── client.py        # FRPClient class
+    ├── tunnel.py        # Tunnel classes (HTTPTunnel, TCPTunnel)
+    ├── process.py       # ProcessManager class
+    ├── config.py        # ConfigBuilder class
+    ├── exceptions.py    # Custom exceptions
+    └── utils.py         # Helper functions
+
+tests/
+├── __init__.py
+├── test_client.py
+├── test_tunnel.py
+├── test_process.py
+├── test_config.py
+├── test_utils.py
+└── test_integration.py
 ```
 
 ## Core Concepts
 
-### Domain Models
-- **Process**: FRP binary process management
-- **Client**: Connection to FRP server
-- **Tunnel**: Exposed local service (TCPTunnel, HTTPTunnel)
-- **Config**: FRP configuration management
+### Main Classes
+- **FRPClient**: Main client for connecting to FRP server
+- **HTTPTunnel**: HTTP tunnel with path-based routing
+- **TCPTunnel**: Simple TCP port forwarding
+- **ProcessManager**: Manages FRP binary process
+- **ConfigBuilder**: Generates FRP configuration files
 
-### Functional Principles
-1. **Immutability**: All domain objects use `@frozen` dataclasses
-2. **Pure Functions**: Business logic has no side effects
-3. **Explicit Effects**: I/O operations isolated in protocols
-4. **Function Composition**: Complex operations built from simple functions
-
-### Subpath Routing Mechanism
-The wrapper uses FRP's native `locations` feature for path-based routing:
+### Path-Based Routing Mechanism
+Uses FRP's native `locations` feature for clean URL routing:
 ```
 User Request: https://example.com/myapp/api
     ↓
@@ -172,120 +165,126 @@ customDomains = ["example.com"]
 locations = ["/myapp"]  # Native path routing!
 ```
 
-## Development Workflow
+## Development Workflow - TDD Approach
 
-### Checkpoint-Based PRs
-The project is divided into 8 checkpoints, organized in 3 phases:
-
-#### Phase 1: Core Foundation
-1. **Process Manager**
-   - FRP binary process management
-   - Process lifecycle management
-   - Configuration file handling
-
-2. **Basic Client**
-   - FRP client connection management
-   - Simple API design (예외 기반)
-   - Connection state management
-
-3. **Tunnel Management**
-   - HTTP/TCP tunnel creation
-   - Tunnel lifecycle management
-   - Basic error handling
-
-#### Phase 2: Advanced Features
-4. **Path Routing**
-   - FRP locations-based routing implementation
-   - Direct path routing using FRP native features
-   - Custom domains and locations
-
-5. **Context Manager**
-   - Automatic resource cleanup
-   - Context manager patterns
-   - Resource lifecycle management
-
-6. **Server Tools**
-   - FRP server configuration tools
-   - SSL certificate management
-   - Server installation scripts
-
-#### Phase 3: Production Ready
-7. **Monitoring & Observability**
-   - Structured logging
-   - Metrics collection
-   - Error tracking
-
-8. **Examples & Documentation**
-   - Comprehensive examples
-   - API documentation
-   - Deployment guides
+### Test-First Development
+1. **Write failing test first**
+2. **Write minimal code to make test pass**
+3. **Refactor while keeping tests green**
+4. **Repeat for each feature**
 
 ### Testing Strategy
-1. **Pure Function Tests**: Simple input/output validation
-2. **Property-Based Tests**: Using Hypothesis for invariant testing
-3. **Effect Mocking**: Mock protocols for testing services
-4. **Integration Tests**: Docker-based FRP server testing
+1. **Unit Tests**: Test individual classes and methods
+2. **Integration Tests**: Test FRP binary interaction
+3. **Property Tests**: Test with varied inputs using Hypothesis
+4. **End-to-End Tests**: Full tunnel creation and usage
 
-### Key Testing Patterns
+### Example TDD Workflow
 ```python
-# Property-based testing
-@given(port=st.integers(min_value=1, max_value=65535))
-def test_port_validation(port):
-    result = create_tcp_tunnel(ClientId("test"), port)
-    assert result.is_ok() == (1 <= port <= 65535)
+# 1. Write failing test
+def test_client_connection():
+    client = FRPClient("test.example.com")
+    assert not client.is_connected()
 
-# Effect mocking
-process_executor = Mock(spec=ProcessExecutor)
-process_executor.spawn.return_value = Ok(12345)
+    client.connect()
+    assert client.is_connected()
+
+# 2. Implement minimal code
+class FRPClient:
+    def __init__(self, server):
+        self.server = server
+        self._connected = False
+
+    def is_connected(self):
+        return self._connected
+
+    def connect(self):
+        # Minimal implementation
+        self._connected = True
+
+# 3. Refactor and add real functionality
 ```
 
 ## Important Notes
 
-1. **Design Phase Project**: This is currently in the design and documentation phase. Implementation follows the checkpoint-based approach outlined below.
-2. **External Dependencies**: Requires FRP binary (https://github.com/fatedier/frp) - the wrapper orchestrates FRP processes rather than reimplementing the protocol
-3. **Korean Documentation**: Some documentation includes Korean annotations (도메인, 유스케이스, etc.) - this is intentional for the target audience
-4. **Dual API Strategy**: 
-   - Simple API (외부): Python exceptions for user-friendly interface
-   - Functional Core (내부): Result[T, E] for internal operations
-5. **Immutable First**: Create new instances instead of modifying existing ones
-6. **FRP Configuration**: Uses TOML format with customDomains and locations for path-based routing
+1. **TDD is Required**: All code must be written test-first with high coverage
+2. **Simple Over Complex**: Prefer clear, simple solutions over clever abstractions
+3. **Python Conventions**: Follow PEP 8, use type hints, clear naming
+4. **FRP Integration**: Direct use of FRP's native features, no unnecessary abstraction
+5. **Error Handling**: Use standard Python exceptions with clear messages
 
 ## Common Tasks
 
-### Adding a New Domain Model
-1. Create in `src/domain/` as a frozen dataclass
-2. Add validation in `__post_init__` if needed
-3. Create pure functions in `src/core/` for operations
-4. Add events in `src/domain/events.py` for state changes
-
 ### Adding a New Feature
-1. Start with domain model and pure functions
-2. Define effect protocols if I/O is needed
-3. Implement service in application layer
-4. Expose through API layer
-5. Write tests: pure functions → mocked effects → integration
+1. Write comprehensive tests first (TDD)
+2. Implement minimal code to pass tests
+3. Refactor for clarity and maintainability
+4. Update documentation and examples
+5. Ensure 95%+ test coverage
 
-### Working with Documentation
+### Working with FRP Configuration
+- Use FRP's native TOML configuration format
+- Leverage `locations` parameter for path routing
+- Test with actual FRP binary when possible
+
+### Running TDD Development
 ```bash
-# View architecture documentation
-cat docs/architecture/domain-model.md
-cat plan/01-architecture.md
+# Start TDD session
+pytest-watch --clear --verbose
 
-# Review checkpoint progress
-ls plan/checkpoints/
-
-# View API specifications  
-cat docs/spec/01-api-spec.md
-
-# Check deployment configurations
-ls deploy/docker/
-ls deploy/k8s/
+# In another terminal, edit tests and code
+# Tests will run automatically on file changes
 ```
 
-### Running Specific Checkpoint Tests (Future)
+## Common Commands for TDD Development
+
 ```bash
-# Test specific checkpoint implementation (once implemented)
-pytest tests/test_checkpoint_01_process_manager.py
-pytest tests/test_checkpoint_02_basic_client.py
-# etc...
+# Install in development mode with test dependencies
+pip install -e ".[dev,test]"
+
+# Run tests continuously during development
+pytest-watch
+
+# Run specific test method
+pytest tests/test_client.py::test_client_connection -v
+
+# Check test coverage
+pytest --cov=src --cov-report=html
+open htmlcov/index.html  # View coverage report
 ```
+
+## Key Testing Patterns
+
+### Unit Test Example
+```python
+import pytest
+from frp_wrapper import FRPClient
+from frp_wrapper.exceptions import ConnectionError
+
+def test_client_requires_server():
+    with pytest.raises(ValueError):
+        FRPClient("")  # Empty server should raise
+
+def test_client_connection_success():
+    client = FRPClient("example.com")
+    # Mock successful connection
+    assert client.connect() == True
+
+def test_client_connection_failure():
+    client = FRPClient("invalid.server")
+    with pytest.raises(ConnectionError):
+        client.connect()
+```
+
+### Integration Test Example
+```python
+@pytest.mark.integration
+def test_real_tunnel_creation():
+    # Requires actual FRP server for testing
+    with FRPClient("test.server.com") as client:
+        tunnel = client.expose_path(3000, "test")
+        assert tunnel.url.startswith("https://")
+        assert "test" in tunnel.url
+```
+
+This approach maintains the core innovative ideas (FRP locations, path routing) while making the codebase much more approachable and maintainable for Python developers, with TDD as a strong foundation.

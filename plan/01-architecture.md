@@ -109,7 +109,7 @@ class ProcessId:
 @dataclass
 class BinaryPath:
     value: str
-    
+
     def __post_init__(self):
         if not os.path.exists(self.value):
             raise ValueError(f"Binary not found: {self.value}")
@@ -124,7 +124,7 @@ class Process:
     status: str = "stopped"  # stopped, starting, running, stopping
     pid: Optional[int] = None
     started_at: Optional[datetime] = None
-    
+
     def with_status(self, status: str, **kwargs) -> 'Process':
         """새로운 상태를 가진 프로세스 인스턴스 반환"""
         return dataclass.replace(self, status=status, **kwargs)
@@ -149,19 +149,19 @@ def start_process(process: Process, pid: int) -> Tuple[Process, ProcessStarted]:
     """프로세스 시작 - 새 상태와 이벤트 반환"""
     if process.status != "stopped":
         raise InvalidStateError(f"Cannot start process in {process.status} state")
-    
+
     new_process = process.with_status(
         "running",
         pid=pid,
         started_at=datetime.now()
     )
-    
+
     event = ProcessStarted(
         process_id=process.id,
         pid=pid,
         occurred_at=datetime.now()
     )
-    
+
     return new_process, event
 ```
 
@@ -176,11 +176,11 @@ class ProcessExecutor(Protocol):
     def spawn(self, command: List[str]) -> int:
         """프로세스 시작하고 PID 반환"""
         ...
-    
+
     def terminate(self, pid: int) -> None:
         """프로세스 종료"""
         ...
-    
+
     def is_alive(self, pid: int) -> bool:
         """프로세스 생존 확인"""
         ...
@@ -220,14 +220,14 @@ class TunnelConfig:
 class FRPConfig:
     server: ServerConfig
     tunnels: List[TunnelConfig]
-    
+
     def add_tunnel(self, tunnel: TunnelConfig) -> 'FRPConfig':
         """새 터널이 추가된 설정 반환"""
         return dataclass.replace(
             self,
             tunnels=self.tunnels + [tunnel]
         )
-    
+
     def remove_tunnel(self, name: str) -> 'FRPConfig':
         """터널이 제거된 설정 반환"""
         return dataclass.replace(
@@ -254,31 +254,31 @@ def build_ini_content(config: FRPConfig) -> str:
     lines = ['[common]']
     lines.append(f'server_addr = {config.server.address}')
     lines.append(f'server_port = {config.server.port}')
-    
+
     if config.server.auth_token:
         lines.append(f'token = {config.server.auth_token}')
-    
+
     for tunnel in config.tunnels:
         lines.append(f'\n[{tunnel.name}]')
         lines.append(f'type = {tunnel.tunnel_type}')
         lines.append(f'local_port = {tunnel.local_port}')
-        
+
         for key, value in tunnel.remote_config.items():
             lines.append(f'{key} = {value}')
-    
+
     return '\n'.join(lines)
 
 def validate_config(config: FRPConfig) -> Result[FRPConfig, List[str]]:
     """설정 유효성 검증 - 순수 함수"""
     errors = []
-    
+
     if not config.server.address:
         errors.append("Server address is required")
-    
+
     for tunnel in config.tunnels:
         if tunnel.local_port < 1 or tunnel.local_port > 65535:
             errors.append(f"Invalid port for tunnel {tunnel.name}")
-    
+
     return Ok(config) if not errors else Err(errors)
 ```
 
@@ -300,7 +300,7 @@ class TunnelId:
 @dataclass
 class Port:
     value: int
-    
+
     def __post_init__(self):
         if not 1 <= self.value <= 65535:
             raise ValueError(f"Invalid port: {self.value}")
@@ -309,7 +309,7 @@ class Port:
 @dataclass
 class Path:
     value: str
-    
+
     def __post_init__(self):
         if self.value.startswith('/'):
             raise ValueError("Path must not start with /")
@@ -324,7 +324,7 @@ class Tunnel:
     status: str = "pending"  # pending, connecting, connected, disconnected
     created_at: datetime = field(default_factory=datetime.now)
     connected_at: Optional[datetime] = None
-    
+
     def with_status(self, status: str, **kwargs) -> 'Tunnel':
         """새로운 상태를 가진 터널 반환"""
         return dataclass.replace(self, status=status, **kwargs)
@@ -369,17 +369,17 @@ def connect_tunnel(
     """터널 연결 - 새 상태와 이벤트 반환"""
     if tunnel.status != "pending":
         raise InvalidStateError(f"Cannot connect tunnel in {tunnel.status} state")
-    
+
     connected_tunnel = tunnel.with_status(
         "connected",
         connected_at=datetime.now()
     )
-    
+
     event = TunnelConnected(
         tunnel_id=tunnel.id,
         occurred_at=datetime.now()
     )
-    
+
     return connected_tunnel, event
 
 def generate_tunnel_url(
@@ -409,7 +409,7 @@ from src.effects.file_effects import FileWriter
 
 class TunnelService:
     """터널 관리 서비스 - 순수 함수들을 조합"""
-    
+
     def __init__(
         self,
         process_executor: ProcessExecutor,
@@ -420,7 +420,7 @@ class TunnelService:
         self.file_writer = file_writer
         self.event_store = event_store
         self._tunnels: Dict[str, Tunnel] = {}
-    
+
     def create_tunnel(
         self,
         local_port: int,
@@ -430,24 +430,24 @@ class TunnelService:
         """터널 생성 유스케이스"""
         # 1. 도메인 로직 (순수)
         tunnel = create_http_tunnel(local_port, path, **options)
-        
+
         # 2. 설정 업데이트 (순수)
         new_config = self._current_config.add_tunnel(
             tunnel_to_config(tunnel)
         )
-        
+
         # 3. 이펙트 실행
         result = pipe(
             lambda _: write_config(new_config, self.file_writer),
             flat_map(lambda path: restart_process(self.process, path, self.process_executor)),
             map(lambda _: tunnel)
         )(None)
-        
+
         # 4. 성공 시 이벤트 저장
         if result.is_ok():
             self._tunnels[tunnel.id.value] = tunnel
             self.event_store.append(TunnelCreated(tunnel_id=tunnel.id))
-        
+
         return result
 ```
 

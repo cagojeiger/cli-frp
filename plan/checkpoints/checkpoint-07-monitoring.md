@@ -1,154 +1,45 @@
-# Checkpoint 7: 모니터링 및 로깅
+# Checkpoint 7: Monitoring & Observability with Pydantic (TDD Approach)
 
-## 개요
-터널 상태 모니터링, 구조화된 로깅, 메트릭 수집 기능을 구현합니다. 운영 중 발생하는 문제를 빠르게 감지하고 디버깅할 수 있는 도구를 제공합니다.
+## Overview
+TDD와 Pydantic v2를 활용하여 FRP 터널의 모니터링, 로깅, 메트릭 수집 시스템을 구현합니다. 구조화된 로깅과 강력한 타입 안전성을 제공합니다.
 
-## 목표
+## Goals
+- Pydantic 기반 모니터링 설정 및 메트릭 모델
 - 구조화된 로깅 시스템 구축
-- 터널 상태 실시간 모니터링
+- 실시간 터널 상태 모니터링
 - 이벤트 기반 알림 시스템
-- 메트릭 수집 및 분석
+- TDD 방식의 완전한 테스트 커버리지
 
-## 구현 범위
+## Test-First Implementation with Pydantic
 
-### 1. 로깅 시스템
+### 1. Monitoring Configuration and Models
+
 ```python
-import structlog
-from typing import Any, Dict, Optional
+# src/frp_wrapper/monitoring/models.py
+from datetime import datetime, timedelta
 from enum import Enum
+from typing import Optional, List, Dict, Any, Union, Callable
+from pydantic import BaseModel, Field, ConfigDict, field_validator, computed_field
+from pydantic import IPvAnyAddress, HttpUrl
 
-class LogLevel(Enum):
+class LogLevel(str, Enum):
+    """Logging levels"""
+    TRACE = "trace"
     DEBUG = "debug"
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
 
-class FRPLogger:
-    """구조화된 로깅을 위한 래퍼"""
-    
-    def __init__(self, name: str, level: LogLevel = LogLevel.INFO):
-        self.logger = structlog.get_logger(name)
-        self.level = level
-        self._configure_structlog()
-        
-    def _configure_structlog(self):
-        """structlog 설정"""
-        structlog.configure(
-            processors=[
-                structlog.stdlib.filter_by_level,
-                structlog.stdlib.add_logger_name,
-                structlog.stdlib.add_log_level,
-                structlog.stdlib.PositionalArgumentsFormatter(),
-                structlog.processors.TimeStamper(fmt="iso"),
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
-                structlog.processors.UnicodeDecoder(),
-                structlog.processors.JSONRenderer()
-            ],
-            context_class=dict,
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            cache_logger_on_first_use=True,
-        )
-        
-    def log_tunnel_event(
-        self,
-        event: str,
-        tunnel_id: str,
-        **kwargs
-    ):
-        """터널 관련 이벤트 로깅"""
-        self.logger.info(
-            event,
-            tunnel_id=tunnel_id,
-            **kwargs
-        )
-        
-    def log_error(
-        self,
-        error: Exception,
-        context: Optional[Dict[str, Any]] = None
-    ):
-        """에러 로깅"""
-        self.logger.error(
-            "error_occurred",
-            error_type=type(error).__name__,
-            error_message=str(error),
-            context=context or {}
-        )
-```
+class MetricType(str, Enum):
+    """Types of metrics collected"""
+    COUNTER = "counter"
+    GAUGE = "gauge"
+    HISTOGRAM = "histogram"
+    SUMMARY = "summary"
 
-### 2. 터널 모니터링
-```python
-@dataclass
-class TunnelMetrics:
-    """터널 메트릭 정보"""
-    tunnel_id: str
-    bytes_sent: int = 0
-    bytes_received: int = 0
-    connection_count: int = 0
-    error_count: int = 0
-    last_activity: Optional[datetime] = None
-    uptime_seconds: float = 0.0
-
-class TunnelMonitor:
-    """터널 상태 모니터링"""
-    
-    def __init__(self, check_interval: float = 5.0):
-        self.check_interval = check_interval
-        self._monitoring = False
-        self._monitor_thread: Optional[threading.Thread] = None
-        self._metrics: Dict[str, TunnelMetrics] = {}
-        self._callbacks: Dict[str, List[Callable]] = defaultdict(list)
-        
-    def start_monitoring(self):
-        """모니터링 시작"""
-        self._monitoring = True
-        self._monitor_thread = threading.Thread(
-            target=self._monitor_loop,
-            daemon=True
-        )
-        self._monitor_thread.start()
-        
-    def stop_monitoring(self):
-        """모니터링 중지"""
-        self._monitoring = False
-        if self._monitor_thread:
-            self._monitor_thread.join()
-            
-    def register_callback(
-        self,
-        event: str,
-        callback: Callable[[str, TunnelMetrics], None]
-    ):
-        """이벤트 콜백 등록"""
-        self._callbacks[event].append(callback)
-        
-    def get_metrics(self, tunnel_id: str) -> Optional[TunnelMetrics]:
-        """특정 터널의 메트릭 조회"""
-        return self._metrics.get(tunnel_id)
-        
-    def _monitor_loop(self):
-        """모니터링 루프"""
-        while self._monitoring:
-            for tunnel_id, metrics in self._metrics.items():
-                # 상태 체크 로직
-                self._check_tunnel_health(tunnel_id, metrics)
-            time.sleep(self.check_interval)
-            
-    def _check_tunnel_health(
-        self,
-        tunnel_id: str,
-        metrics: TunnelMetrics
-    ):
-        """터널 상태 확인"""
-        # 구현 예정
-        pass
-```
-
-### 3. 이벤트 시스템
-```python
-class EventType(Enum):
+class EventType(str, Enum):
+    """Event types for monitoring"""
     TUNNEL_CREATED = "tunnel_created"
     TUNNEL_CONNECTED = "tunnel_connected"
     TUNNEL_DISCONNECTED = "tunnel_disconnected"
@@ -156,366 +47,1049 @@ class EventType(Enum):
     TUNNEL_CLOSED = "tunnel_closed"
     CLIENT_CONNECTED = "client_connected"
     CLIENT_DISCONNECTED = "client_disconnected"
-    METRIC_THRESHOLD = "metric_threshold"
+    METRIC_THRESHOLD_EXCEEDED = "metric_threshold_exceeded"
+    HEALTH_CHECK_FAILED = "health_check_failed"
 
-class EventEmitter:
-    """이벤트 발생 및 처리"""
-    
-    def __init__(self):
-        self._handlers: Dict[EventType, List[Callable]] = defaultdict(list)
-        self._logger = FRPLogger("event_emitter")
-        
-    def on(
+class LoggingConfig(BaseModel):
+    """Pydantic configuration for logging system"""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra='forbid'
+    )
+
+    # Basic logging settings
+    level: LogLevel = Field(default=LogLevel.INFO, description="Minimum log level")
+    format: str = Field(default="json", pattern="^(json|text)$", description="Log format")
+
+    # File logging
+    enable_file_logging: bool = Field(default=True, description="Enable file logging")
+    log_file: Optional[str] = Field(None, description="Log file path")
+    max_file_size_mb: int = Field(default=100, ge=1, le=1000, description="Maximum log file size in MB")
+    backup_count: int = Field(default=5, ge=1, le=50, description="Number of backup log files")
+
+    # Console logging
+    enable_console_logging: bool = Field(default=True, description="Enable console logging")
+    console_level: LogLevel = Field(default=LogLevel.INFO, description="Console log level")
+
+    # Structured logging
+    include_caller_info: bool = Field(default=True, description="Include caller file/line info")
+    include_process_info: bool = Field(default=True, description="Include process/thread info")
+
+    @field_validator('log_file')
+    @classmethod
+    def validate_log_file_path(cls, v: Optional[str]) -> Optional[str]:
+        """Validate log file path"""
+        if v is not None:
+            if not v or len(v.strip()) == 0:
+                raise ValueError("Log file path cannot be empty")
+            # Additional path validation could be added here
+        return v
+
+class TunnelMetrics(BaseModel):
+    """Pydantic model for tunnel metrics"""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True
+    )
+
+    tunnel_id: str = Field(..., min_length=1, description="Tunnel identifier")
+
+    # Traffic metrics
+    bytes_sent: int = Field(default=0, ge=0, description="Total bytes sent")
+    bytes_received: int = Field(default=0, ge=0, description="Total bytes received")
+    packets_sent: int = Field(default=0, ge=0, description="Total packets sent")
+    packets_received: int = Field(default=0, ge=0, description="Total packets received")
+
+    # Connection metrics
+    total_connections: int = Field(default=0, ge=0, description="Total connections established")
+    active_connections: int = Field(default=0, ge=0, description="Currently active connections")
+    failed_connections: int = Field(default=0, ge=0, description="Failed connection attempts")
+
+    # Error metrics
+    error_count: int = Field(default=0, ge=0, description="Total error count")
+    last_error_time: Optional[datetime] = Field(None, description="Last error timestamp")
+
+    # Performance metrics
+    average_latency_ms: float = Field(default=0.0, ge=0, description="Average latency in milliseconds")
+    max_latency_ms: float = Field(default=0.0, ge=0, description="Maximum latency in milliseconds")
+
+    # Status tracking
+    created_at: datetime = Field(default_factory=datetime.now, description="Metrics creation time")
+    last_activity: Optional[datetime] = Field(None, description="Last activity timestamp")
+    uptime_seconds: float = Field(default=0.0, ge=0, description="Tunnel uptime in seconds")
+
+    @computed_field
+    @property
+    def error_rate(self) -> float:
+        """Calculate error rate as percentage"""
+        if self.total_connections == 0:
+            return 0.0
+        return (self.error_count / self.total_connections) * 100
+
+    @computed_field
+    @property
+    def throughput_mbps(self) -> float:
+        """Calculate throughput in Mbps"""
+        if self.uptime_seconds == 0:
+            return 0.0
+        total_bytes = self.bytes_sent + self.bytes_received
+        return (total_bytes * 8) / (self.uptime_seconds * 1_000_000)  # Convert to Mbps
+
+    def update_activity(self) -> 'TunnelMetrics':
+        """Update last activity timestamp"""
+        return self.model_copy(update={'last_activity': datetime.now()})
+
+    def add_traffic(self, bytes_sent: int = 0, bytes_received: int = 0) -> 'TunnelMetrics':
+        """Add traffic data and update activity"""
+        return self.model_copy(update={
+            'bytes_sent': self.bytes_sent + bytes_sent,
+            'bytes_received': self.bytes_received + bytes_received,
+            'last_activity': datetime.now()
+        })
+
+class MonitoringAlert(BaseModel):
+    """Pydantic model for monitoring alerts"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    alert_id: str = Field(..., min_length=1, description="Unique alert identifier")
+    alert_type: str = Field(..., min_length=1, description="Type of alert")
+    severity: str = Field(..., pattern="^(low|medium|high|critical)$", description="Alert severity")
+    message: str = Field(..., min_length=1, description="Alert message")
+
+    # Context information
+    tunnel_id: Optional[str] = Field(None, description="Related tunnel ID")
+    metric_name: Optional[str] = Field(None, description="Related metric name")
+    metric_value: Optional[float] = Field(None, description="Metric value that triggered alert")
+    threshold_value: Optional[float] = Field(None, description="Threshold that was exceeded")
+
+    # Timing
+    created_at: datetime = Field(default_factory=datetime.now, description="Alert creation time")
+    resolved_at: Optional[datetime] = Field(None, description="Alert resolution time")
+
+    @computed_field
+    @property
+    def is_resolved(self) -> bool:
+        """Check if alert is resolved"""
+        return self.resolved_at is not None
+
+    @computed_field
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """Calculate alert duration in seconds"""
+        if self.resolved_at is None:
+            return None
+        return (self.resolved_at - self.created_at).total_seconds()
+
+class MonitoringConfig(BaseModel):
+    """Complete monitoring system configuration"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # Logging configuration
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+
+    # Monitoring intervals
+    metrics_collection_interval: float = Field(default=5.0, ge=0.1, le=300.0, description="Metrics collection interval in seconds")
+    health_check_interval: float = Field(default=30.0, ge=1.0, le=3600.0, description="Health check interval in seconds")
+
+    # Alert thresholds
+    error_rate_threshold: float = Field(default=5.0, ge=0.0, le=100.0, description="Error rate threshold percentage")
+    latency_threshold_ms: float = Field(default=1000.0, ge=0.0, description="Latency threshold in milliseconds")
+    connection_threshold: int = Field(default=1000, ge=1, description="Maximum concurrent connections")
+
+    # Data retention
+    metrics_retention_hours: int = Field(default=24, ge=1, le=8760, description="Metrics retention period in hours")
+    alert_retention_days: int = Field(default=30, ge=1, le=365, description="Alert retention period in days")
+
+    # Dashboard settings
+    enable_dashboard: bool = Field(default=False, description="Enable web dashboard")
+    dashboard_port: int = Field(default=9999, ge=1, le=65535, description="Dashboard port")
+    dashboard_host: str = Field(default="localhost", description="Dashboard host")
+
+    @field_validator('metrics_collection_interval')
+    @classmethod
+    def validate_collection_interval(cls, v: float) -> float:
+        """Ensure reasonable collection interval"""
+        if v < 0.1:
+            raise ValueError("Collection interval too small, minimum 0.1 seconds")
+        if v > 300:
+            raise ValueError("Collection interval too large, maximum 300 seconds")
+        return v
+
+class LogEvent(BaseModel):
+    """Pydantic model for structured log events"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # Basic event info
+    timestamp: datetime = Field(default_factory=datetime.now)
+    level: LogLevel = Field(..., description="Log level")
+    logger_name: str = Field(..., min_length=1, description="Logger name")
+    message: str = Field(..., description="Log message")
+
+    # Context information
+    tunnel_id: Optional[str] = Field(None, description="Related tunnel ID")
+    client_id: Optional[str] = Field(None, description="Related client ID")
+    event_type: Optional[EventType] = Field(None, description="Event type")
+
+    # Technical details
+    module: Optional[str] = Field(None, description="Source module")
+    function: Optional[str] = Field(None, description="Source function")
+    line_number: Optional[int] = Field(None, ge=1, description="Source line number")
+    process_id: Optional[int] = Field(None, description="Process ID")
+    thread_name: Optional[str] = Field(None, description="Thread name")
+
+    # Additional context
+    extra_data: Dict[str, Any] = Field(default_factory=dict, description="Additional contextual data")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization"""
+        return self.model_dump(mode='json', exclude_none=True)
+```
+
+### 2. Enhanced Monitoring Tests
+
+```python
+# tests/test_monitoring_models.py
+import pytest
+from datetime import datetime, timedelta
+from pydantic import ValidationError
+
+from frp_wrapper.monitoring.models import (
+    LoggingConfig, TunnelMetrics, MonitoringAlert, MonitoringConfig,
+    LogEvent, LogLevel, EventType
+)
+
+class TestLoggingConfig:
+    def test_logging_config_defaults(self):
+        """Test LoggingConfig creation with default values"""
+        config = LoggingConfig()
+
+        assert config.level == LogLevel.INFO
+        assert config.format == "json"
+        assert config.enable_file_logging is True
+        assert config.max_file_size_mb == 100
+        assert config.backup_count == 5
+        assert config.enable_console_logging is True
+
+    def test_logging_config_validation_errors(self):
+        """Test LoggingConfig validation with invalid values"""
+        # Invalid format
+        with pytest.raises(ValidationError, match="String should match pattern"):
+            LoggingConfig(format="invalid")
+
+        # Invalid file size
+        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+            LoggingConfig(max_file_size_mb=0)
+
+        with pytest.raises(ValidationError, match="less than or equal to 1000"):
+            LoggingConfig(max_file_size_mb=1001)
+
+        # Invalid backup count
+        with pytest.raises(ValidationError, match="less than or equal to 50"):
+            LoggingConfig(backup_count=51)
+
+    def test_log_file_validation(self):
+        """Test log file path validation"""
+        # Valid log file
+        config = LoggingConfig(log_file="/var/log/frp/frps.log")
+        assert config.log_file == "/var/log/frp/frps.log"
+
+        # Empty log file
+        with pytest.raises(ValidationError, match="cannot be empty"):
+            LoggingConfig(log_file="")
+
+        with pytest.raises(ValidationError, match="cannot be empty"):
+            LoggingConfig(log_file="   ")
+
+class TestTunnelMetrics:
+    def test_tunnel_metrics_creation(self):
+        """Test TunnelMetrics creation with default values"""
+        metrics = TunnelMetrics(tunnel_id="test-tunnel")
+
+        assert metrics.tunnel_id == "test-tunnel"
+        assert metrics.bytes_sent == 0
+        assert metrics.bytes_received == 0
+        assert metrics.total_connections == 0
+        assert metrics.error_count == 0
+        assert metrics.uptime_seconds == 0.0
+        assert isinstance(metrics.created_at, datetime)
+
+    def test_tunnel_metrics_validation_errors(self):
+        """Test TunnelMetrics validation with invalid values"""
+        # Empty tunnel ID
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            TunnelMetrics(tunnel_id="")
+
+        # Negative values
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
+            TunnelMetrics(tunnel_id="test", bytes_sent=-1)
+
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
+            TunnelMetrics(tunnel_id="test", error_count=-1)
+
+    def test_tunnel_metrics_computed_fields(self):
+        """Test computed fields in TunnelMetrics"""
+        metrics = TunnelMetrics(
+            tunnel_id="test-tunnel",
+            total_connections=100,
+            error_count=5,
+            bytes_sent=1_000_000,
+            bytes_received=2_000_000,
+            uptime_seconds=60.0  # 1 minute
+        )
+
+        # Test error rate calculation
+        assert metrics.error_rate == 5.0  # 5 errors out of 100 connections = 5%
+
+        # Test throughput calculation (3MB in 60 seconds = 0.4 Mbps)
+        expected_throughput = (3_000_000 * 8) / (60 * 1_000_000)
+        assert abs(metrics.throughput_mbps - expected_throughput) < 0.001
+
+    def test_tunnel_metrics_update_methods(self):
+        """Test update methods for TunnelMetrics"""
+        metrics = TunnelMetrics(tunnel_id="test-tunnel")
+
+        # Test activity update
+        updated_metrics = metrics.update_activity()
+        assert updated_metrics.last_activity is not None
+        assert updated_metrics.tunnel_id == "test-tunnel"  # Other fields preserved
+
+        # Test traffic addition
+        traffic_metrics = metrics.add_traffic(bytes_sent=1024, bytes_received=2048)
+        assert traffic_metrics.bytes_sent == 1024
+        assert traffic_metrics.bytes_received == 2048
+        assert traffic_metrics.last_activity is not None
+
+    def test_tunnel_metrics_immutability(self):
+        """Test that TunnelMetrics is immutable"""
+        metrics = TunnelMetrics(tunnel_id="test-tunnel", bytes_sent=1000)
+        updated_metrics = metrics.add_traffic(bytes_sent=500)
+
+        # Original should be unchanged
+        assert metrics.bytes_sent == 1000
+        assert updated_metrics.bytes_sent == 1500
+
+class TestMonitoringAlert:
+    def test_monitoring_alert_creation(self):
+        """Test MonitoringAlert creation"""
+        alert = MonitoringAlert(
+            alert_id="alert-001",
+            alert_type="threshold_exceeded",
+            severity="high",
+            message="Error rate exceeded threshold",
+            tunnel_id="tunnel-123",
+            metric_name="error_rate",
+            metric_value=10.5,
+            threshold_value=5.0
+        )
+
+        assert alert.alert_id == "alert-001"
+        assert alert.severity == "high"
+        assert alert.tunnel_id == "tunnel-123"
+        assert alert.metric_value == 10.5
+        assert alert.is_resolved is False
+        assert alert.duration_seconds is None
+
+    def test_monitoring_alert_validation_errors(self):
+        """Test MonitoringAlert validation"""
+        # Invalid severity
+        with pytest.raises(ValidationError, match="String should match pattern"):
+            MonitoringAlert(
+                alert_id="test",
+                alert_type="test",
+                severity="invalid",
+                message="test"
+            )
+
+        # Empty required fields
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            MonitoringAlert(
+                alert_id="",
+                alert_type="test",
+                severity="high",
+                message="test"
+            )
+
+    def test_monitoring_alert_resolution(self):
+        """Test alert resolution functionality"""
+        alert = MonitoringAlert(
+            alert_id="alert-001",
+            alert_type="test",
+            severity="medium",
+            message="Test alert"
+        )
+
+        # Initially not resolved
+        assert alert.is_resolved is False
+        assert alert.duration_seconds is None
+
+        # Resolve alert
+        resolved_alert = alert.model_copy(update={'resolved_at': datetime.now()})
+        assert resolved_alert.is_resolved is True
+        assert resolved_alert.duration_seconds is not None
+        assert resolved_alert.duration_seconds >= 0
+
+class TestMonitoringConfig:
+    def test_monitoring_config_creation(self):
+        """Test MonitoringConfig creation with defaults"""
+        config = MonitoringConfig()
+
+        assert isinstance(config.logging, LoggingConfig)
+        assert config.metrics_collection_interval == 5.0
+        assert config.health_check_interval == 30.0
+        assert config.error_rate_threshold == 5.0
+        assert config.enable_dashboard is False
+
+    def test_monitoring_config_validation_errors(self):
+        """Test MonitoringConfig validation"""
+        # Invalid collection interval
+        with pytest.raises(ValidationError, match="Collection interval too small"):
+            MonitoringConfig(metrics_collection_interval=0.05)
+
+        with pytest.raises(ValidationError, match="Collection interval too large"):
+            MonitoringConfig(metrics_collection_interval=400.0)
+
+        # Invalid thresholds
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
+            MonitoringConfig(error_rate_threshold=-1.0)
+
+        with pytest.raises(ValidationError, match="less than or equal to 100"):
+            MonitoringConfig(error_rate_threshold=101.0)
+
+    def test_monitoring_config_custom_settings(self):
+        """Test MonitoringConfig with custom settings"""
+        custom_logging = LoggingConfig(
+            level=LogLevel.DEBUG,
+            enable_file_logging=False,
+            log_file=None
+        )
+
+        config = MonitoringConfig(
+            logging=custom_logging,
+            metrics_collection_interval=1.0,
+            error_rate_threshold=10.0,
+            enable_dashboard=True,
+            dashboard_port=8080
+        )
+
+        assert config.logging.level == LogLevel.DEBUG
+        assert config.metrics_collection_interval == 1.0
+        assert config.error_rate_threshold == 10.0
+        assert config.enable_dashboard is True
+        assert config.dashboard_port == 8080
+
+class TestLogEvent:
+    def test_log_event_creation(self):
+        """Test LogEvent creation"""
+        event = LogEvent(
+            level=LogLevel.INFO,
+            logger_name="frp_wrapper.client",
+            message="Tunnel connected successfully",
+            tunnel_id="tunnel-123",
+            event_type=EventType.TUNNEL_CONNECTED,
+            module="client.py",
+            function="connect_tunnel",
+            line_number=42,
+            extra_data={"local_port": 3000, "remote_port": 8080}
+        )
+
+        assert event.level == LogLevel.INFO
+        assert event.logger_name == "frp_wrapper.client"
+        assert event.tunnel_id == "tunnel-123"
+        assert event.event_type == EventType.TUNNEL_CONNECTED
+        assert event.extra_data["local_port"] == 3000
+        assert isinstance(event.timestamp, datetime)
+
+    def test_log_event_validation_errors(self):
+        """Test LogEvent validation"""
+        # Empty logger name
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            LogEvent(
+                level=LogLevel.INFO,
+                logger_name="",
+                message="test"
+            )
+
+        # Invalid line number
+        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+            LogEvent(
+                level=LogLevel.INFO,
+                logger_name="test",
+                message="test",
+                line_number=0
+            )
+
+    def test_log_event_serialization(self):
+        """Test LogEvent serialization to dictionary"""
+        event = LogEvent(
+            level=LogLevel.ERROR,
+            logger_name="test_logger",
+            message="Test error message",
+            tunnel_id="tunnel-456",
+            extra_data={"error_code": 500}
+        )
+
+        event_dict = event.to_dict()
+
+        assert event_dict["level"] == "error"
+        assert event_dict["logger_name"] == "test_logger"
+        assert event_dict["message"] == "Test error message"
+        assert event_dict["tunnel_id"] == "tunnel-456"
+        assert event_dict["extra_data"]["error_code"] == 500
+        assert "timestamp" in event_dict
+
+# Integration tests
+class TestMonitoringIntegration:
+    def test_complete_monitoring_scenario(self):
+        """Test complete monitoring scenario with all models"""
+        # Create monitoring configuration
+        config = MonitoringConfig(
+            metrics_collection_interval=1.0,
+            error_rate_threshold=10.0,
+            enable_dashboard=True
+        )
+
+        # Create tunnel metrics
+        metrics = TunnelMetrics(
+            tunnel_id="integration-test-tunnel",
+            total_connections=50,
+            error_count=3,
+            bytes_sent=1_000_000,
+            uptime_seconds=300.0
+        )
+
+        # Check if error rate exceeds threshold
+        if metrics.error_rate > config.error_rate_threshold:
+            # Create alert
+            alert = MonitoringAlert(
+                alert_id="alert-integration-001",
+                alert_type="error_rate_exceeded",
+                severity="medium",
+                message=f"Error rate {metrics.error_rate:.1f}% exceeds threshold {config.error_rate_threshold}%",
+                tunnel_id=metrics.tunnel_id,
+                metric_name="error_rate",
+                metric_value=metrics.error_rate,
+                threshold_value=config.error_rate_threshold
+            )
+
+            # Log the event
+            log_event = LogEvent(
+                level=LogLevel.WARNING,
+                logger_name="monitoring.alerting",
+                message=alert.message,
+                tunnel_id=metrics.tunnel_id,
+                event_type=EventType.METRIC_THRESHOLD_EXCEEDED,
+                extra_data={
+                    "alert_id": alert.alert_id,
+                    "metric_value": alert.metric_value,
+                    "threshold": alert.threshold_value
+                }
+            )
+
+            # Verify everything is properly structured
+            assert metrics.error_rate == 6.0  # 3 errors / 50 connections
+            assert alert.severity == "medium"
+            assert log_event.event_type == EventType.METRIC_THRESHOLD_EXCEEDED
+            assert log_event.extra_data["alert_id"] == "alert-integration-001"
+
+    def test_metrics_progression_over_time(self):
+        """Test metrics evolution over time"""
+        # Initial metrics
+        metrics = TunnelMetrics(tunnel_id="time-test-tunnel")
+
+        # Simulate traffic over time
+        metrics_t1 = metrics.add_traffic(bytes_sent=1000, bytes_received=500)
+        assert metrics_t1.bytes_sent == 1000
+        assert metrics_t1.bytes_received == 500
+
+        metrics_t2 = metrics_t1.add_traffic(bytes_sent=2000, bytes_received=1500)
+        assert metrics_t2.bytes_sent == 3000
+        assert metrics_t2.bytes_received == 2000
+
+        # Verify immutability chain
+        assert metrics.bytes_sent == 0  # Original unchanged
+        assert metrics_t1.bytes_sent == 1000  # First update unchanged
+        assert metrics_t2.bytes_sent == 3000  # Final state
+
+    def test_monitoring_config_serialization(self):
+        """Test monitoring configuration serialization"""
+        config = MonitoringConfig(
+            logging=LoggingConfig(
+                level=LogLevel.DEBUG,
+                log_file="/var/log/frp/test.log"
+            ),
+            metrics_collection_interval=2.0,
+            error_rate_threshold=15.0,
+            enable_dashboard=True,
+            dashboard_port=9998
+        )
+
+        # Serialize to dict
+        config_dict = config.model_dump()
+
+        # Verify structure
+        assert config_dict["logging"]["level"] == "debug"
+        assert config_dict["logging"]["log_file"] == "/var/log/frp/test.log"
+        assert config_dict["metrics_collection_interval"] == 2.0
+        assert config_dict["error_rate_threshold"] == 15.0
+        assert config_dict["enable_dashboard"] is True
+
+        # Deserialize back
+        restored_config = MonitoringConfig.model_validate(config_dict)
+        assert restored_config.logging.level == LogLevel.DEBUG
+        assert restored_config.error_rate_threshold == 15.0
+```
+
+### 3. Monitoring System Implementation
+
+```python
+# src/frp_wrapper/monitoring/system.py
+import asyncio
+import json
+import logging
+import threading
+import time
+from collections import defaultdict, deque
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Callable, Any
+from pathlib import Path
+
+from .models import (
+    MonitoringConfig, TunnelMetrics, MonitoringAlert, LogEvent,
+    LogLevel, EventType, MetricType
+)
+
+logger = logging.getLogger(__name__)
+
+class MetricsCollector:
+    """TDD-driven metrics collection system"""
+
+    def __init__(self, config: MonitoringConfig):
+        self.config = config
+        self.metrics: Dict[str, TunnelMetrics] = {}
+        self.alerts: List[MonitoringAlert] = []
+        self._running = False
+        self._collection_thread: Optional[threading.Thread] = None
+        self._alert_callbacks: List[Callable[[MonitoringAlert], None]] = []
+        self._lock = threading.RLock()
+
+    def start_collection(self) -> None:
+        """Start metrics collection"""
+        if self._running:
+            return
+
+        self._running = True
+        self._collection_thread = threading.Thread(
+            target=self._collection_loop,
+            daemon=True,
+            name="MetricsCollector"
+        )
+        self._collection_thread.start()
+        logger.info("Metrics collection started")
+
+    def stop_collection(self) -> None:
+        """Stop metrics collection"""
+        if not self._running:
+            return
+
+        self._running = False
+        if self._collection_thread:
+            self._collection_thread.join(timeout=5.0)
+        logger.info("Metrics collection stopped")
+
+    def register_tunnel(self, tunnel_id: str) -> None:
+        """Register new tunnel for monitoring"""
+        with self._lock:
+            if tunnel_id not in self.metrics:
+                self.metrics[tunnel_id] = TunnelMetrics(tunnel_id=tunnel_id)
+                logger.info(f"Registered tunnel for monitoring: {tunnel_id}")
+
+    def unregister_tunnel(self, tunnel_id: str) -> None:
+        """Unregister tunnel from monitoring"""
+        with self._lock:
+            if tunnel_id in self.metrics:
+                del self.metrics[tunnel_id]
+                logger.info(f"Unregistered tunnel from monitoring: {tunnel_id}")
+
+    def update_metrics(self, tunnel_id: str, **updates) -> None:
+        """Update metrics for a tunnel"""
+        with self._lock:
+            if tunnel_id in self.metrics:
+                current_metrics = self.metrics[tunnel_id]
+                self.metrics[tunnel_id] = current_metrics.model_copy(update=updates)
+
+    def add_traffic(self, tunnel_id: str, bytes_sent: int = 0, bytes_received: int = 0) -> None:
+        """Add traffic data for a tunnel"""
+        with self._lock:
+            if tunnel_id in self.metrics:
+                self.metrics[tunnel_id] = self.metrics[tunnel_id].add_traffic(
+                    bytes_sent=bytes_sent,
+                    bytes_received=bytes_received
+                )
+
+    def get_metrics(self, tunnel_id: str) -> Optional[TunnelMetrics]:
+        """Get current metrics for a tunnel"""
+        with self._lock:
+            return self.metrics.get(tunnel_id)
+
+    def get_all_metrics(self) -> Dict[str, TunnelMetrics]:
+        """Get all current metrics"""
+        with self._lock:
+            return self.metrics.copy()
+
+    def add_alert_callback(self, callback: Callable[[MonitoringAlert], None]) -> None:
+        """Add callback for alert notifications"""
+        self._alert_callbacks.append(callback)
+
+    def _collection_loop(self) -> None:
+        """Main collection loop"""
+        while self._running:
+            try:
+                self._collect_and_check()
+                time.sleep(self.config.metrics_collection_interval)
+            except Exception as e:
+                logger.error(f"Error in metrics collection loop: {e}")
+                time.sleep(1.0)  # Avoid tight loop on errors
+
+    def _collect_and_check(self) -> None:
+        """Collect metrics and check thresholds"""
+        with self._lock:
+            current_time = datetime.now()
+
+            for tunnel_id, metrics in self.metrics.items():
+                # Update uptime
+                uptime_delta = (current_time - metrics.created_at).total_seconds()
+                updated_metrics = metrics.model_copy(update={'uptime_seconds': uptime_delta})
+                self.metrics[tunnel_id] = updated_metrics
+
+                # Check thresholds
+                self._check_thresholds(tunnel_id, updated_metrics)
+
+    def _check_thresholds(self, tunnel_id: str, metrics: TunnelMetrics) -> None:
+        """Check if metrics exceed configured thresholds"""
+        alerts_to_create = []
+
+        # Check error rate threshold
+        if metrics.error_rate > self.config.error_rate_threshold:
+            alert = MonitoringAlert(
+                alert_id=f"error_rate_{tunnel_id}_{int(datetime.now().timestamp())}",
+                alert_type="error_rate_exceeded",
+                severity="high" if metrics.error_rate > 20 else "medium",
+                message=f"Error rate {metrics.error_rate:.1f}% exceeds threshold {self.config.error_rate_threshold}%",
+                tunnel_id=tunnel_id,
+                metric_name="error_rate",
+                metric_value=metrics.error_rate,
+                threshold_value=self.config.error_rate_threshold
+            )
+            alerts_to_create.append(alert)
+
+        # Check latency threshold
+        if metrics.average_latency_ms > self.config.latency_threshold_ms:
+            alert = MonitoringAlert(
+                alert_id=f"latency_{tunnel_id}_{int(datetime.now().timestamp())}",
+                alert_type="latency_exceeded",
+                severity="medium",
+                message=f"Latency {metrics.average_latency_ms:.1f}ms exceeds threshold {self.config.latency_threshold_ms}ms",
+                tunnel_id=tunnel_id,
+                metric_name="average_latency_ms",
+                metric_value=metrics.average_latency_ms,
+                threshold_value=self.config.latency_threshold_ms
+            )
+            alerts_to_create.append(alert)
+
+        # Check connection threshold
+        if metrics.active_connections > self.config.connection_threshold:
+            alert = MonitoringAlert(
+                alert_id=f"connections_{tunnel_id}_{int(datetime.now().timestamp())}",
+                alert_type="connection_limit_exceeded",
+                severity="high",
+                message=f"Active connections {metrics.active_connections} exceeds threshold {self.config.connection_threshold}",
+                tunnel_id=tunnel_id,
+                metric_name="active_connections",
+                metric_value=float(metrics.active_connections),
+                threshold_value=float(self.config.connection_threshold)
+            )
+            alerts_to_create.append(alert)
+
+        # Process alerts
+        for alert in alerts_to_create:
+            self.alerts.append(alert)
+            logger.warning(f"Alert created: {alert.message}")
+
+            # Notify callbacks
+            for callback in self._alert_callbacks:
+                try:
+                    callback(alert)
+                except Exception as e:
+                    logger.error(f"Error in alert callback: {e}")
+
+class StructuredLogger:
+    """Structured logging system with Pydantic models"""
+
+    def __init__(self, config: MonitoringConfig):
+        self.config = config
+        self._setup_logging()
+
+    def _setup_logging(self) -> None:
+        """Setup logging configuration"""
+        # Configure root logger
+        root_logger = logging.getLogger()
+        root_logger.setLevel(getattr(logging, self.config.logging.level.value.upper()))
+
+        # Clear existing handlers
+        root_logger.handlers.clear()
+
+        # Setup console handler
+        if self.config.logging.enable_console_logging:
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(
+                getattr(logging, self.config.logging.console_level.value.upper())
+            )
+
+            if self.config.logging.format == "json":
+                console_handler.setFormatter(JSONFormatter())
+            else:
+                console_handler.setFormatter(
+                    logging.Formatter(
+                        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                    )
+                )
+            root_logger.addHandler(console_handler)
+
+        # Setup file handler
+        if self.config.logging.enable_file_logging and self.config.logging.log_file:
+            from logging.handlers import RotatingFileHandler
+
+            log_path = Path(self.config.logging.log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+
+            file_handler = RotatingFileHandler(
+                self.config.logging.log_file,
+                maxBytes=self.config.logging.max_file_size_mb * 1024 * 1024,
+                backupCount=self.config.logging.backup_count
+            )
+            file_handler.setLevel(getattr(logging, self.config.logging.level.value.upper()))
+
+            if self.config.logging.format == "json":
+                file_handler.setFormatter(JSONFormatter())
+            else:
+                file_handler.setFormatter(
+                    logging.Formatter(
+                        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                    )
+                )
+            root_logger.addHandler(file_handler)
+
+    def log_event(self, event: LogEvent) -> None:
+        """Log a structured event"""
+        logger = logging.getLogger(event.logger_name)
+        level = getattr(logging, event.level.value.upper())
+
+        # Create extra context for the log record
+        extra = {
+            'tunnel_id': event.tunnel_id,
+            'client_id': event.client_id,
+            'event_type': event.event_type.value if event.event_type else None,
+            'extra_data': event.extra_data
+        }
+
+        # Add technical details if available
+        if event.module:
+            extra['module'] = event.module
+        if event.function:
+            extra['function'] = event.function
+        if event.line_number:
+            extra['line_number'] = event.line_number
+
+        logger.log(level, event.message, extra=extra)
+
+    def log_tunnel_event(
         self,
-        event_type: EventType,
-        handler: Callable[[Dict[str, Any]], None]
-    ):
-        """이벤트 핸들러 등록"""
-        self._handlers[event_type].append(handler)
-        
-    def emit(
-        self,
-        event_type: EventType,
-        data: Dict[str, Any]
-    ):
-        """이벤트 발생"""
-        self._logger.log_tunnel_event(
-            f"event_emitted_{event_type.value}",
-            tunnel_id=data.get('tunnel_id', 'N/A'),
+        level: LogLevel,
+        message: str,
+        tunnel_id: str,
+        event_type: Optional[EventType] = None,
+        **extra_data
+    ) -> None:
+        """Convenience method for logging tunnel events"""
+        event = LogEvent(
+            level=level,
+            logger_name="frp_wrapper.monitoring",
+            message=message,
+            tunnel_id=tunnel_id,
+            event_type=event_type,
+            extra_data=extra_data
+        )
+        self.log_event(event)
+
+class JSONFormatter(logging.Formatter):
+    """JSON formatter for structured logging"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format log record as JSON"""
+        log_data = {
+            'timestamp': datetime.fromtimestamp(record.created).isoformat(),
+            'level': record.levelname.lower(),
+            'logger': record.name,
+            'message': record.getMessage(),
+            'module': record.module,
+            'function': record.funcName,
+            'line': record.lineno,
+            'process': record.process,
+            'thread': record.thread,
+            'thread_name': record.threadName
+        }
+
+        # Add extra fields if present
+        for key, value in record.__dict__.items():
+            if key not in log_data and not key.startswith('_'):
+                if key in ['tunnel_id', 'client_id', 'event_type', 'extra_data']:
+                    log_data[key] = value
+
+        # Add exception info if present
+        if record.exc_info:
+            log_data['exception'] = self.formatException(record.exc_info)
+
+        return json.dumps(log_data, default=str)
+
+class MonitoringSystem:
+    """Complete monitoring system combining all components"""
+
+    def __init__(self, config: Optional[MonitoringConfig] = None):
+        self.config = config or MonitoringConfig()
+        self.metrics_collector = MetricsCollector(self.config)
+        self.logger = StructuredLogger(self.config)
+        self._event_handlers: Dict[EventType, List[Callable]] = defaultdict(list)
+
+    def start(self) -> None:
+        """Start the monitoring system"""
+        self.metrics_collector.start_collection()
+        self.logger.log_tunnel_event(
+            LogLevel.INFO,
+            "Monitoring system started",
+            tunnel_id="system",
+            event_type=EventType.CLIENT_CONNECTED
+        )
+
+    def stop(self) -> None:
+        """Stop the monitoring system"""
+        self.metrics_collector.stop_collection()
+        self.logger.log_tunnel_event(
+            LogLevel.INFO,
+            "Monitoring system stopped",
+            tunnel_id="system",
+            event_type=EventType.CLIENT_DISCONNECTED
+        )
+
+    def register_tunnel(self, tunnel_id: str) -> None:
+        """Register a tunnel for monitoring"""
+        self.metrics_collector.register_tunnel(tunnel_id)
+        self.logger.log_tunnel_event(
+            LogLevel.INFO,
+            f"Tunnel registered for monitoring: {tunnel_id}",
+            tunnel_id=tunnel_id,
+            event_type=EventType.TUNNEL_CREATED
+        )
+
+    def unregister_tunnel(self, tunnel_id: str) -> None:
+        """Unregister a tunnel from monitoring"""
+        self.metrics_collector.unregister_tunnel(tunnel_id)
+        self.logger.log_tunnel_event(
+            LogLevel.INFO,
+            f"Tunnel unregistered from monitoring: {tunnel_id}",
+            tunnel_id=tunnel_id,
+            event_type=EventType.TUNNEL_CLOSED
+        )
+
+    def on_event(self, event_type: EventType, handler: Callable[[Dict[str, Any]], None]) -> None:
+        """Register event handler"""
+        self._event_handlers[event_type].append(handler)
+
+    def emit_event(self, event_type: EventType, data: Dict[str, Any]) -> None:
+        """Emit event to all registered handlers"""
+        tunnel_id = data.get('tunnel_id', 'unknown')
+
+        # Log the event
+        self.logger.log_tunnel_event(
+            LogLevel.INFO,
+            f"Event emitted: {event_type.value}",
+            tunnel_id=tunnel_id,
+            event_type=event_type,
             event_data=data
         )
-        
-        for handler in self._handlers[event_type]:
+
+        # Call handlers
+        for handler in self._event_handlers[event_type]:
             try:
                 handler(data)
             except Exception as e:
-                self._logger.log_error(e, {'event_type': event_type.value})
+                self.logger.log_tunnel_event(
+                    LogLevel.ERROR,
+                    f"Error in event handler: {e}",
+                    tunnel_id=tunnel_id,
+                    error=str(e)
+                )
 ```
 
-### 4. 상태 대시보드
-```python
-class MonitoringDashboard:
-    """간단한 모니터링 대시보드"""
-    
-    def __init__(self, client: FRPClient):
-        self.client = client
-        self.monitor = TunnelMonitor()
-        self._server: Optional[HTTPServer] = None
-        
-    def start(self, port: int = 9999):
-        """대시보드 서버 시작"""
-        from http.server import HTTPServer, BaseHTTPRequestHandler
-        
-        class DashboardHandler(BaseHTTPRequestHandler):
-            def do_GET(self):
-                if self.path == '/api/status':
-                    self._serve_status()
-                elif self.path == '/':
-                    self._serve_dashboard()
-                    
-        self._server = HTTPServer(('', port), DashboardHandler)
-        threading.Thread(
-            target=self._server.serve_forever,
-            daemon=True
-        ).start()
-        
-    def get_status(self) -> Dict[str, Any]:
-        """현재 상태 정보"""
-        return {
-            'client': {
-                'connected': self.client.is_connected(),
-                'server': self.client.server,
-                'uptime': self.client.get_uptime()
-            },
-            'tunnels': [
-                {
-                    'id': tunnel.id,
-                    'type': tunnel.config.tunnel_type,
-                    'local_port': tunnel.config.local_port,
-                    'url': tunnel.url,
-                    'status': tunnel.status.value,
-                    'metrics': self.monitor.get_metrics(tunnel.id)
-                }
-                for tunnel in self.client.list_tunnels()
-            ]
-        }
+## Implementation Timeline (TDD + Pydantic)
+
+### Day 1: Monitoring Models & Configuration
+1. **Write monitoring model tests**: TunnelMetrics, MonitoringAlert, LogEvent validation
+2. **Implement Pydantic models**: Comprehensive monitoring data models
+3. **Write configuration tests**: MonitoringConfig validation and serialization
+4. **Implement configuration**: Type-safe monitoring system configuration
+
+### Day 2: Metrics Collection & Logging
+1. **Write metrics collector tests**: Collection, thresholds, alerts
+2. **Implement MetricsCollector**: Real-time metrics collection with threading
+3. **Write structured logging tests**: JSON formatting, log levels, file rotation
+4. **Implement StructuredLogger**: Pydantic-based structured logging
+
+### Day 3: Integration & Monitoring System
+1. **Write monitoring system tests**: Complete system integration
+2. **Implement MonitoringSystem**: Coordinated monitoring components
+3. **Write dashboard tests**: Web interface and API endpoints
+4. **Integration testing**: Real FRP monitoring scenarios
+
+## File Structure
 ```
-
-## 테스트 시나리오
-
-### 유닛 테스트
-
-1. **구조화된 로깅**
-   ```python
-   def test_structured_logging():
-       logger = FRPLogger("test")
-       
-       # 로그 캡처
-       with capture_logs() as cap_logs:
-           logger.log_tunnel_event(
-               "tunnel_created",
-               "tunnel_123",
-               local_port=3000,
-               remote_port=8080
-           )
-       
-       log = cap_logs[0]
-       assert log['event'] == 'tunnel_created'
-       assert log['tunnel_id'] == 'tunnel_123'
-       assert log['local_port'] == 3000
-   ```
-
-2. **메트릭 수집**
-   ```python
-   def test_tunnel_metrics():
-       monitor = TunnelMonitor()
-       monitor.start_monitoring()
-       
-       # 메트릭 업데이트
-       metrics = TunnelMetrics(tunnel_id="test_tunnel")
-       metrics.bytes_sent = 1024
-       metrics.connection_count = 5
-       
-       monitor._metrics["test_tunnel"] = metrics
-       
-       retrieved = monitor.get_metrics("test_tunnel")
-       assert retrieved.bytes_sent == 1024
-       assert retrieved.connection_count == 5
-   ```
-
-3. **이벤트 시스템**
-   ```python
-   def test_event_system():
-       emitter = EventEmitter()
-       received_events = []
-       
-       def handler(data):
-           received_events.append(data)
-       
-       emitter.on(EventType.TUNNEL_CREATED, handler)
-       emitter.emit(EventType.TUNNEL_CREATED, {
-           'tunnel_id': 'test_123',
-           'local_port': 3000
-       })
-       
-       assert len(received_events) == 1
-       assert received_events[0]['tunnel_id'] == 'test_123'
-   ```
-
-4. **상태 임계값 알림**
-   ```python
-   def test_threshold_alerts():
-       monitor = TunnelMonitor()
-       alerts = []
-       
-       def alert_handler(tunnel_id, metrics):
-           alerts.append((tunnel_id, metrics))
-       
-       monitor.register_callback('high_error_rate', alert_handler)
-       
-       # 높은 에러율 시뮬레이션
-       metrics = TunnelMetrics(tunnel_id="test")
-       metrics.error_count = 100
-       metrics.connection_count = 110
-       
-       monitor._check_tunnel_health("test", metrics)
-       
-       assert len(alerts) == 1
-       assert alerts[0][0] == "test"
-   ```
-
-### 통합 테스트
-
-1. **실시간 모니터링**
-   ```python
-   @pytest.mark.integration
-   def test_real_time_monitoring():
-       client = FRPClient("localhost")
-       monitor = TunnelMonitor()
-       
-       with client:
-           tunnel = client.expose_tcp(3000)
-           monitor.start_monitoring()
-           
-           # 트래픽 생성
-           generate_test_traffic(3000)
-           
-           time.sleep(10)  # 메트릭 수집 대기
-           
-           metrics = monitor.get_metrics(tunnel.id)
-           assert metrics.bytes_sent > 0
-           assert metrics.connection_count > 0
-   ```
-
-2. **대시보드 테스트**
-   ```python
-   def test_monitoring_dashboard():
-       client = FRPClient("localhost")
-       dashboard = MonitoringDashboard(client)
-       
-       dashboard.start(9999)
-       
-       with client:
-           tunnel1 = client.expose_tcp(3000)
-           tunnel2 = client.expose_path(8000, "api")
-           
-           # API 엔드포인트 테스트
-           response = requests.get("http://localhost:9999/api/status")
-           status = response.json()
-           
-           assert status['client']['connected']
-           assert len(status['tunnels']) == 2
-   ```
-
-## 구현 상세
-
-### 프로세스 출력 파싱
-```python
-class OutputParser:
-    """FRP 프로세스 출력 파싱"""
-    
-    # 정규표현식 패턴
-    PATTERNS = {
-        'tunnel_connected': re.compile(
-            r'\[(.+?)\] \[I\] \[proxy\] \[(.+?)\] proxy started'
-        ),
-        'tunnel_error': re.compile(
-            r'\[(.+?)\] \[E\] \[proxy\] \[(.+?)\] (.+)'
-        ),
-        'traffic_stats': re.compile(
-            r'\[(.+?)\] \[I\] \[proxy\] \[(.+?)\] in:(\d+) out:(\d+)'
-        )
-    }
-    
-    def parse_line(self, line: str) -> Optional[Dict[str, Any]]:
-        """로그 라인 파싱"""
-        for event_type, pattern in self.PATTERNS.items():
-            match = pattern.match(line)
-            if match:
-                return self._extract_data(event_type, match)
-        return None
-        
-    def _extract_data(
-        self,
-        event_type: str,
-        match: re.Match
-    ) -> Dict[str, Any]:
-        """매치된 데이터 추출"""
-        if event_type == 'tunnel_connected':
-            return {
-                'type': 'tunnel_connected',
-                'timestamp': match.group(1),
-                'tunnel_id': match.group(2)
-            }
-        # ... 기타 이벤트 타입 처리
-```
-
-### 메트릭 집계
-```python
-class MetricsAggregator:
-    """메트릭 집계 및 분석"""
-    
-    def __init__(self, window_size: int = 300):  # 5분 윈도우
-        self.window_size = window_size
-        self._data_points: Dict[str, deque] = defaultdict(
-            lambda: deque(maxlen=window_size)
-        )
-        
-    def add_data_point(
-        self,
-        tunnel_id: str,
-        metric_type: str,
-        value: float,
-        timestamp: Optional[datetime] = None
-    ):
-        """데이터 포인트 추가"""
-        timestamp = timestamp or datetime.now()
-        key = f"{tunnel_id}:{metric_type}"
-        self._data_points[key].append((timestamp, value))
-        
-    def get_average(
-        self,
-        tunnel_id: str,
-        metric_type: str,
-        time_range: Optional[int] = None
-    ) -> float:
-        """평균값 계산"""
-        key = f"{tunnel_id}:{metric_type}"
-        points = self._data_points.get(key, [])
-        
-        if not points:
-            return 0.0
-            
-        if time_range:
-            cutoff = datetime.now() - timedelta(seconds=time_range)
-            points = [(t, v) for t, v in points if t > cutoff]
-            
-        return sum(v for _, v in points) / len(points)
-```
-
-## 파일 구조
-```
-frp_wrapper/
+src/frp_wrapper/
+├── __init__.py
 ├── monitoring/
 │   ├── __init__.py
-│   ├── logger.py       # 로깅 시스템
-│   ├── monitor.py      # 터널 모니터링
-│   ├── events.py       # 이벤트 시스템
-│   ├── metrics.py      # 메트릭 수집
-│   ├── dashboard.py    # 대시보드
-│   └── parser.py       # 출력 파싱
-└── client.py           # 모니터링 통합
+│   ├── models.py          # Pydantic monitoring models
+│   ├── system.py          # Complete monitoring system
+│   ├── dashboard.py       # Optional web dashboard
+│   └── exporters.py       # Metrics exporters (Prometheus, etc.)
 
 tests/
-├── test_logging.py
-├── test_monitoring.py
-├── test_events.py
-├── test_metrics.py
-└── test_dashboard.py
+├── __init__.py
+├── test_monitoring_models.py    # Pydantic model tests
+├── test_metrics_collector.py    # Metrics collection tests
+├── test_structured_logging.py   # Logging system tests
+└── test_monitoring_integration.py  # Integration tests
 ```
 
-## 완료 기준
+## Success Criteria
+- [ ] 100% test coverage for monitoring system
+- [ ] All Pydantic validation scenarios tested
+- [ ] Real-time metrics collection working
+- [ ] Structured logging with JSON output
+- [ ] Alert threshold system functional
+- [ ] Thread-safe metrics handling
+- [ ] Integration with FRP tunnels tested
 
-### 필수 기능
-- [x] 구조화된 로깅
-- [x] 터널 상태 모니터링
-- [x] 이벤트 시스템
-- [x] 메트릭 수집
-- [x] 기본 대시보드
+## Key Pydantic Benefits for Monitoring
+1. **Data Validation**: Comprehensive metrics and configuration validation
+2. **Type Safety**: Full IDE support for monitoring data structures
+3. **Serialization**: Easy JSON export for dashboards and APIs
+4. **Computed Fields**: Automatic calculation of derived metrics
+5. **Immutability**: Safe concurrent access to metrics data
+6. **Documentation**: Self-documenting monitoring configuration
 
-### 테스트
-- [x] 로깅 출력 테스트
-- [x] 이벤트 발생/처리 테스트
-- [x] 메트릭 집계 테스트
-- [x] 대시보드 API 테스트
-
-### 문서
-- [x] 로깅 설정 가이드
-- [x] 모니터링 API 문서
-- [x] 이벤트 타입 설명
-
-## 예상 작업 시간
-- 로깅 시스템: 3시간
-- 모니터링 구현: 4시간
-- 이벤트 시스템: 3시간
-- 대시보드: 3시간
-- 테스트 작성: 4시간
-
-**총 예상 시간**: 17시간 (3일)
-
-## 다음 단계 준비
-- 예제 코드 작성
-- 전체 문서 정리
-- 패키지 배포 준비
-
-## 의존성
-- structlog
-- threading
-- http.server (표준 라이브러리)
-- Optional: prometheus_client
-
-## 주의사항
-- 스레드 안전성
-- 메모리 사용량 관리
-- 로그 파일 크기 제한
-- 성능 영향 최소화
+This approach provides production-ready monitoring with comprehensive validation, excellent performance, and robust error handling suitable for enterprise deployments.

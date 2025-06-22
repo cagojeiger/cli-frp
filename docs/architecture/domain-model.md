@@ -1,479 +1,380 @@
-# 도메인 모델 설계
+# 간단한 아키텍처 가이드
 
-이 문서는 FRP Python Wrapper의 핵심 도메인 모델을 설명합니다. 모든 도메인 모델은 불변(immutable) 데이터 구조로 설계되었습니다.
+이 문서는 FRP Python Wrapper의 간단하고 실용적인 아키텍처를 설명합니다. TDD와 Pydantic v2를 활용한 Pythonic 설계를 따릅니다.
 
-## 도메인 개요
+## 핵심 모듈 구조
 
 ```mermaid
 graph TD
-    Client[Client] --> Process[Process]
-    Client --> Tunnel[Tunnel]
-    Tunnel --> TCPTunnel[TCPTunnel]
-    Tunnel --> HTTPTunnel[HTTPTunnel]
-    Process --> Config[Config]
-    Tunnel --> Config
-    
-    Client -.-> ClientEvent[ClientEvent]
-    Process -.-> ProcessEvent[ProcessEvent]
-    Tunnel -.-> TunnelEvent[TunnelEvent]
+    Client[FRPClient] --> ProcessManager[ProcessManager]
+    Client --> TunnelManager[TunnelManager]
+    TunnelManager --> HTTPTunnel[HTTPTunnel]
+    TunnelManager --> TCPTunnel[TCPTunnel]
+    ProcessManager --> Config[Pydantic Config]
+    TunnelManager --> Config
 ```
 
-## 핵심 도메인 모델
+## 핵심 클래스 (Pydantic 기반)
 
-### 1. Client (클라이언트)
+### 1. FRPClient (메인 클라이언트)
 
-FRP 서버에 연결하는 클라이언트를 나타냅니다.
+FRP 서버에 연결하고 터널을 관리하는 메인 클래스입니다.
 
 ```python
-@frozen
-@dataclass
-class ClientId:
-    """클라이언트 고유 식별자"""
-    value: str
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional, List
+from enum import Enum
 
-@frozen
-@dataclass
-class ServerAddress:
-    """서버 주소"""
-    host: str
-    port: int = 7000
-    
-    def __post_init__(self):
-        if not self.host:
-            raise ValueError("Server host cannot be empty")
-        if not 1 <= self.port <= 65535:
-            raise ValueError(f"Invalid port: {self.port}")
-
-@frozen
-@dataclass
-class AuthToken:
-    """인증 토큰"""
-    value: str
-    
-    def masked(self) -> str:
-        """토큰을 마스킹하여 반환"""
-        if len(self.value) <= 8:
-            return "***"
-        return f"{self.value[:4]}...{self.value[-4:]}"
-
-@frozen
-@dataclass
-class ConnectionState:
+class ConnectionStatus(str, Enum):
     """연결 상태"""
-    status: str = "disconnected"  # disconnected, connecting, connected, error
-    server: Optional[ServerAddress] = None
-    connected_at: Optional[datetime] = None
-    last_error: Optional[str] = None
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    ERROR = "error"
 
-@frozen
-@dataclass
-class Client:
-    """FRP 클라이언트"""
-    id: ClientId
-    server: ServerAddress
-    auth_token: Optional[AuthToken] = None
-    connection_state: ConnectionState = field(default_factory=ConnectionState)
-    process_id: Optional[ProcessId] = None
-    config_path: Optional[str] = None
+class ClientConfig(BaseModel):
+    """클라이언트 설정"""
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra='forbid'
+    )
+
+    server_host: str = Field(..., min_length=1, description="FRP 서버 주소")
+    server_port: int = Field(default=7000, ge=1, le=65535, description="FRP 서버 포트")
+    auth_token: Optional[str] = Field(None, min_length=8, description="인증 토큰")
+    binary_path: Optional[str] = Field(None, description="FRP 바이너리 경로")
+
+class FRPClient:
+    """FRP 클라이언트 메인 클래스"""
+
+    def __init__(self, server: str, port: int = 7000, auth_token: Optional[str] = None):
+        """클라이언트 초기화"""
+        self.config = ClientConfig(
+            server_host=server,
+            server_port=port,
+            auth_token=auth_token
+        )
+        self.status = ConnectionStatus.DISCONNECTED
+        self._process_manager = ProcessManager()
+        self._tunnels: List[BaseTunnel] = []
+
+    def connect(self) -> bool:
+        """서버에 연결"""
+        # 구현은 TDD로 진행
+        pass
+
+    def disconnect(self) -> bool:
+        """서버 연결 해제"""
+        # 구현은 TDD로 진행
+        pass
+
+    def is_connected(self) -> bool:
+        """연결 상태 확인"""
+        return self.status == ConnectionStatus.CONNECTED
 ```
 
-### 2. Process (프로세스)
+### 2. ProcessManager (프로세스 관리)
 
-FRP 바이너리 프로세스를 나타냅니다.
+FRP 바이너리 프로세스를 관리합니다.
 
 ```python
-@frozen
-@dataclass
-class ProcessId:
-    """프로세스 고유 식별자"""
-    value: str
+class ProcessStatus(str, Enum):
+    """프로세스 상태"""
+    STOPPED = "stopped"
+    STARTING = "starting"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    ERROR = "error"
 
-@frozen
-@dataclass
-class BinaryPath:
-    """바이너리 경로"""
-    value: str
-    
-    def __post_init__(self):
-        # 경로 유효성은 Effect에서 검증
-        if not self.value:
-            raise ValueError("Binary path cannot be empty")
+class ProcessConfig(BaseModel):
+    """프로세스 설정"""
+    model_config = ConfigDict(str_strip_whitespace=True)
 
-@frozen
-@dataclass
-class Process:
-    """FRP 프로세스"""
-    id: ProcessId
-    binary_path: BinaryPath
-    config_path: str
-    status: str = "stopped"  # stopped, starting, running, stopping
-    pid: Optional[int] = None
-    started_at: Optional[datetime] = None
-    
-    def with_status(self, status: str, **kwargs) -> 'Process':
-        """새로운 상태를 가진 프로세스 인스턴스 반환"""
-        return dataclasses.replace(self, status=status, **kwargs)
+    binary_path: str = Field(..., description="FRP 바이너리 경로")
+    config_file: str = Field(..., description="설정 파일 경로")
+    working_dir: Optional[str] = Field(None, description="작업 디렉토리")
+    timeout: int = Field(default=30, ge=1, le=300, description="타임아웃 (초)")
+
+class ProcessManager:
+    """FRP 프로세스 관리 클래스"""
+
+    def __init__(self, binary_path: Optional[str] = None):
+        """프로세스 매니저 초기화"""
+        self.binary_path = binary_path or self._find_binary()
+        self.status = ProcessStatus.STOPPED
+        self.pid: Optional[int] = None
+
+    def start(self, config_file: str) -> bool:
+        """프로세스 시작"""
+        # 구현은 TDD로 진행
+        pass
+
+    def stop(self) -> bool:
+        """프로세스 종료"""
+        # 구현은 TDD로 진행
+        pass
+
+    def is_running(self) -> bool:
+        """실행 상태 확인"""
+        return self.status == ProcessStatus.RUNNING
 ```
 
-### 3. Tunnel (터널)
+### 3. Tunnel (터널 클래스)
 
-로컬 서비스를 외부에 노출하는 터널을 나타냅니다.
-
-```python
-@frozen
-@dataclass
-class TunnelId:
-    """터널 고유 식별자"""
-    value: str
-
-@frozen
-@dataclass
-class Port:
-    """포트 번호"""
-    value: int
-    
-    def __post_init__(self):
-        if not 1 <= self.value <= 65535:
-            raise ValueError(f"Invalid port: {self.value}")
-
-@frozen
-@dataclass
-class Path:
-    """URL 경로"""
-    value: str
-    
-    def __post_init__(self):
-        if self.value.startswith('/'):
-            raise ValueError("Path must not start with /")
-
-@frozen
-@dataclass
-class TunnelConfig:
-    """터널 설정"""
-    local_port: Port
-    tunnel_type: str  # 'tcp', 'http', 'udp'
-    remote_port: Optional[Port] = None
-    custom_domains: List[str] = field(default_factory=list)
-    options: Dict[str, Any] = field(default_factory=dict)
-
-@frozen
-@dataclass
-class Tunnel:
-    """터널 기본 타입"""
-    id: TunnelId
-    config: TunnelConfig
-    client_id: ClientId
-    status: str = "pending"  # pending, connecting, connected, disconnected, error, closed
-    created_at: datetime = field(default_factory=datetime.now)
-    connected_at: Optional[datetime] = None
-    error_message: Optional[str] = None
-```
-
-#### TCP 터널
+로컬 서비스를 외부에 노출하는 터널을 관리합니다.
 
 ```python
-@frozen
-@dataclass
-class TCPTunnel(Tunnel):
-    """TCP 터널"""
-    
-    @property
-    def endpoint(self) -> Optional[str]:
-        """터널 엔드포인트 (host:port)"""
-        if self.config.remote_port and self.status == "connected":
-            # server_host는 context에서 제공
-            return f"{server_host}:{self.config.remote_port.value}"
-        return None
-```
+class TunnelStatus(str, Enum):
+    """터널 상태"""
+    PENDING = "pending"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    ERROR = "error"
+    CLOSED = "closed"
 
-#### HTTP 터널
+class BaseTunnel(BaseModel):
+    """터널 기본 클래스"""
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra='forbid'
+    )
 
-```python
-@frozen
-@dataclass
-class HTTPTunnel(Tunnel):
+    id: str = Field(..., min_length=1, description="터널 고유 식별자")
+    local_port: int = Field(..., ge=1, le=65535, description="로컬 포트")
+    status: TunnelStatus = Field(default=TunnelStatus.PENDING)
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    def close(self) -> None:
+        """터널 종료"""
+        # 구현은 TDD로 진행
+        pass
+
+class HTTPTunnel(BaseTunnel):
     """HTTP 터널"""
-    path: Optional[Path] = None
-    custom_domains: List[str] = field(default_factory=list)
-    locations: List[str] = field(default_factory=list)
-    strip_path: bool = True
-    websocket: bool = True
-    
+
+    path: str = Field(..., min_length=1, description="URL 경로")
+    custom_domains: List[str] = Field(default_factory=list)
+    websocket_support: bool = Field(default=True)
+
     @property
     def url(self) -> Optional[str]:
         """터널 접속 URL"""
-        if self.status == "connected" and self.custom_domains and self.locations:
+        if self.status == TunnelStatus.CONNECTED and self.custom_domains:
             domain = self.custom_domains[0]
-            location = self.locations[0]
-            return f"https://{domain}{location}/"
+            return f"https://{domain}/{self.path}/"
+        return None
+
+class TCPTunnel(BaseTunnel):
+    """TCP 터널"""
+
+    remote_port: Optional[int] = Field(None, ge=1, le=65535)
+
+    @property
+    def endpoint(self) -> Optional[str]:
+        """터널 엔드포인트"""
+        if self.status == TunnelStatus.CONNECTED and self.remote_port:
+            return f"server:{ self.remote_port}"
         return None
 ```
 
-### 4. Config (설정)
 
-FRP 설정을 나타냅니다.
+### 4. Config (설정 관리)
+
+FRP 설정을 Pydantic으로 관리합니다.
 
 ```python
-@frozen
-@dataclass
-class ServerConfig:
-    """서버 설정"""
-    address: str
-    port: int = 7000
-    auth_token: Optional[str] = None
+class FRPServerConfig(BaseModel):
+    """FRP 서버 설정"""
+    model_config = ConfigDict(str_strip_whitespace=True)
 
-@frozen
-@dataclass
-class TunnelConfigEntry:
-    """설정 파일의 터널 항목"""
-    name: str
-    tunnel_type: str
-    local_port: int
-    custom_domains: List[str] = field(default_factory=list)
-    locations: List[str] = field(default_factory=list)
-    remote_config: Dict[str, Any] = field(default_factory=dict)
+    server_addr: str = Field(..., description="서버 주소")
+    server_port: int = Field(default=7000, ge=1, le=65535)
+    auth_token: Optional[str] = Field(None, min_length=8)
 
-@frozen
-@dataclass
-class FRPConfig:
-    """FRP 전체 설정"""
-    server: ServerConfig
-    tunnels: List[TunnelConfigEntry] = field(default_factory=list)
-    
-    def add_tunnel(self, tunnel: TunnelConfigEntry) -> 'FRPConfig':
-        """새 터널이 추가된 설정 반환"""
-        return dataclasses.replace(
-            self,
-            tunnels=self.tunnels + [tunnel]
+class TunnelConfigEntry(BaseModel):
+    """터널 설정 항목"""
+
+    name: str = Field(..., min_length=1, description="터널 이름")
+    type: str = Field(..., pattern="^(tcp|http|udp)$")
+    local_port: int = Field(..., ge=1, le=65535)
+    custom_domains: List[str] = Field(default_factory=list)
+    locations: List[str] = Field(default_factory=list)
+
+class ConfigBuilder:
+    """FRP 설정 파일 생성 클래스"""
+
+    def __init__(self):
+        self.server_config: Optional[FRPServerConfig] = None
+        self.tunnels: List[TunnelConfigEntry] = []
+
+    def set_server(self, host: str, port: int = 7000, token: Optional[str] = None):
+        """서버 설정"""
+        self.server_config = FRPServerConfig(
+            server_addr=host,
+            server_port=port,
+            auth_token=token
         )
-    
-    def remove_tunnel(self, name: str) -> 'FRPConfig':
-        """터널이 제거된 설정 반환"""
-        return dataclasses.replace(
-            self,
-            tunnels=[t for t in self.tunnels if t.name != name]
-        )
+
+    def add_tunnel(self, tunnel: TunnelConfigEntry):
+        """터널 추가"""
+        self.tunnels.append(tunnel)
+
+    def build_toml(self) -> str:
+        """TOML 설정 파일 생성"""
+        # 구현은 TDD로 진행
+        pass
 ```
 
-## 도메인 이벤트
+## 사용 예제
 
-모든 상태 변경은 이벤트로 추적됩니다.
-
-### 기본 이벤트
+### 기본 사용법
 
 ```python
-@dataclass
-class DomainEvent:
-    """도메인 이벤트 기본 클래스"""
-    event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
-    occurred_at: datetime = field(default_factory=datetime.now)
+from frp_wrapper import FRPClient
+
+# 1. 클라이언트 생성 및 연결
+client = FRPClient("example.com", auth_token="your-token")
+client.connect()
+
+# 2. HTTP 터널 생성
+tunnel = client.expose_path(3000, "myapp")
+print(f"URL: {tunnel.url}")  # https://example.com/myapp/
+
+# 3. TCP 터널 생성
+tcp_tunnel = client.expose_tcp(5432)
+print(f"Endpoint: {tcp_tunnel.endpoint}")
+
+# 4. 정리
+tunnel.close()
+tcp_tunnel.close()
+client.disconnect()
 ```
 
-### 클라이언트 이벤트
+### Context Manager 사용
 
 ```python
-@dataclass
-class ClientCreated(DomainEvent):
-    """클라이언트 생성 이벤트"""
-    client_id: ClientId
-    server: ServerAddress
-
-@dataclass
-class ClientConnected(DomainEvent):
-    """클라이언트 연결 이벤트"""
-    client_id: ClientId
-    server: ServerAddress
-
-@dataclass
-class ClientDisconnected(DomainEvent):
-    """클라이언트 연결 해제 이벤트"""
-    client_id: ClientId
-    reason: Optional[str] = None
+with FRPClient("example.com") as client:
+    with client.expose_path(3000, "myapp") as tunnel:
+        print(f"Tunnel active: {tunnel.url}")
+        # 자동으로 터널과 클라이언트가 정리됨
 ```
 
-### 프로세스 이벤트
 
+## 설계 원칙
+
+### 1. Pydantic 활용
+- 모든 설정과 데이터는 Pydantic BaseModel 사용
+- 자동 유효성 검증과 타입 안전성 제공
+- JSON/YAML 직렬화/역직렬화 지원
+
+### 2. TDD (Test-Driven Development)
+- 모든 기능은 테스트 작성 후 구현
+- 95% 이상의 테스트 커버리지 유지
+- Property-based testing으로 견고성 확보
+
+### 3. 간단한 API
+- 복잡한 함수형 패턴 대신 직관적인 클래스 기반 설계
+- 표준 Python 예외 처리
+- Context manager로 자동 리소스 관리
+
+## 개발 워크플로
+
+### 1. 테스트 작성
 ```python
-@dataclass
-class ProcessStarted(DomainEvent):
-    """프로세스 시작 이벤트"""
-    process_id: ProcessId
-    pid: int
+def test_create_http_tunnel():
+    """HTTP 터널 생성 테스트"""
+    client = FRPClient("example.com")
+    tunnel = client.expose_path(3000, "myapp")
 
-@dataclass
-class ProcessStopped(DomainEvent):
-    """프로세스 종료 이벤트"""
-    process_id: ProcessId
-    exit_code: Optional[int] = None
+    assert tunnel.local_port == 3000
+    assert tunnel.path == "myapp"
+    assert tunnel.status == TunnelStatus.PENDING
 ```
 
-### 터널 이벤트
-
+### 2. 구현
 ```python
-@dataclass
-class TunnelCreated(DomainEvent):
-    """터널 생성 이벤트"""
-    tunnel_id: TunnelId
-    tunnel_type: str
-    local_port: int
-    path: Optional[str] = None
-
-@dataclass
-class TunnelConnected(DomainEvent):
-    """터널 연결 이벤트"""
-    tunnel_id: TunnelId
-
-@dataclass
-class TunnelDisconnected(DomainEvent):
-    """터널 연결 해제 이벤트"""
-    tunnel_id: TunnelId
-    reason: Optional[str] = None
-
-@dataclass
-class TunnelClosed(DomainEvent):
-    """터널 종료 이벤트"""
-    tunnel_id: TunnelId
-    reason: Optional[str] = None
+def expose_path(self, local_port: int, path: str) -> HTTPTunnel:
+    """HTTP 터널 생성"""
+    tunnel = HTTPTunnel(
+        id=generate_tunnel_id(),
+        local_port=local_port,
+        path=path
+    )
+    self._tunnels.append(tunnel)
+    return tunnel
 ```
 
-## 값 객체 (Value Objects)
-
-### Result 타입
-
-```python
-T = TypeVar('T')
-E = TypeVar('E')
-
-@dataclass
-class Ok(Generic[T]):
-    """성공 결과"""
-    value: T
-
-@dataclass
-class Err(Generic[E]):
-    """실패 결과"""
-    error: E
-
-Result = Union[Ok[T], Err[E]]
-```
-
-### Option 타입
-
-```python
-@dataclass
-class Some(Generic[T]):
-    """값이 있음"""
-    value: T
-
-@dataclass
-class Nothing:
-    """값이 없음"""
-    pass
-
-Option = Union[Some[T], Nothing]
-```
-
-## 도메인 규칙
-
-### 1. 불변성 규칙
-- 모든 도메인 객체는 `@frozen` 데코레이터 사용
-- 상태 변경은 새 객체 생성으로만 가능
-- 리스트나 딕셔너리는 `field(default_factory=...)` 사용
-
-### 2. 유효성 검증
-- 값 객체는 생성 시점에 유효성 검증
-- 비즈니스 규칙은 도메인 서비스에서 검증
-- I/O 관련 검증은 Effect에서 처리
-
-### 3. 이벤트 소싱
-- 모든 상태 변경은 이벤트 발생
-- 이벤트는 불변이며 추가만 가능
-- 이벤트로부터 상태 재구성 가능
-
-## 예제: 터널 생명주기
-
-```python
-# 1. 터널 생성
-tunnel = TCPTunnel(
-    id=TunnelId("tunnel-123"),
-    config=TunnelConfig(
-        local_port=Port(3000),
-        tunnel_type="tcp",
-        remote_port=Port(8080)
-    ),
-    client_id=ClientId("client-456")
-)
-# 이벤트: TunnelCreated
-
-# 2. 터널 연결
-connected_tunnel = tunnel.with_status(
-    "connected",
-    connected_at=datetime.now()
-)
-# 이벤트: TunnelConnected
-
-# 3. 터널 종료
-closed_tunnel = connected_tunnel.with_status(
-    "closed",
-    error_message="User requested"
-)
-# 이벤트: TunnelClosed
-```
+### 3. 리팩터링
+- 테스트 통과 후 코드 개선
+- Pydantic 모델 최적화
+- 성능 및 가독성 향상
 
 ## 테스트 가이드
 
-### 도메인 모델 생성 테스트
+### Pydantic 모델 테스트
 
 ```python
-def test_create_tunnel():
-    tunnel = TCPTunnel(
-        id=TunnelId("test-id"),
-        config=TunnelConfig(
-            local_port=Port(3000),
-            tunnel_type="tcp"
-        ),
-        client_id=ClientId("client-id")
+import pytest
+from pydantic import ValidationError
+
+def test_client_config_validation():
+    """클라이언트 설정 유효성 검증"""
+    # 유효한 설정
+    config = ClientConfig(
+        server_host="example.com",
+        server_port=7000,
+        auth_token="secret123"
     )
-    
-    assert tunnel.id.value == "test-id"
-    assert tunnel.config.local_port.value == 3000
-    assert tunnel.status == "pending"
-```
+    assert config.server_host == "example.com"
 
-### 불변성 테스트
-
-```python
-def test_tunnel_immutability():
-    tunnel = create_test_tunnel()
-    
-    # 직접 수정 불가
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        tunnel.status = "connected"
-    
-    # 새 객체 생성으로만 변경 가능
-    new_tunnel = tunnel.with_status("connected")
-    assert tunnel.status == "pending"  # 원본 불변
-    assert new_tunnel.status == "connected"  # 새 객체
-```
-
-### 유효성 검증 테스트
-
-```python
-def test_port_validation():
-    # 유효한 포트
-    port = Port(8080)
-    assert port.value == 8080
-    
     # 잘못된 포트
-    with pytest.raises(ValueError):
-        Port(0)
-    
-    with pytest.raises(ValueError):
-        Port(65536)
+    with pytest.raises(ValidationError):
+        ClientConfig(server_host="example.com", server_port=0)
+
+    # 빈 호스트
+    with pytest.raises(ValidationError):
+        ClientConfig(server_host="")
+```
+
+### 클래스 동작 테스트
+
+```python
+def test_tunnel_creation():
+    """터널 생성 테스트"""
+    tunnel = HTTPTunnel(
+        id="test-tunnel",
+        local_port=3000,
+        path="myapp"
+    )
+
+    assert tunnel.id == "test-tunnel"
+    assert tunnel.local_port == 3000
+    assert tunnel.path == "myapp"
+    assert tunnel.status == TunnelStatus.PENDING
+```
+
+### Property-based 테스트
+
+```python
+from hypothesis import given, strategies as st
+
+@given(port=st.integers(min_value=1, max_value=65535))
+def test_valid_ports_always_work(port):
+    """유효한 포트는 항상 동작"""
+    tunnel = HTTPTunnel(
+        id="test",
+        local_port=port,
+        path="test"
+    )
+    assert tunnel.local_port == port
 ```
 
 ## 참고 사항
 
-- 도메인 모델은 프레임워크나 인프라에 의존하지 않음
-- 비즈니스 로직은 도메인 모델과 순수 함수에만 존재
-- 영속성이나 직렬화는 인프라 계층에서 처리
+- Pydantic v2의 최신 기능 활용 (Field, ConfigDict 등)
+- 모든 외부 의존성은 명확한 인터페이스로 분리
+- 설정과 데이터 검증은 Pydantic이 자동 처리
+- TDD 사이클을 통한 견고한 코드 구조

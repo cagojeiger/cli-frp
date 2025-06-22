@@ -1,746 +1,567 @@
-# Checkpoint 3: 터널 생성/삭제 (함수형 접근)
+# Checkpoint 3: Tunnel Management with Pydantic (TDD Approach)
 
-## 개요
-FRP 터널을 불변 데이터 구조로 추상화하고 순수 함수를 사용하여 생명주기를 관리하는 기능을 구현합니다. TCP 터널부터 시작하여 함수형 터널 관리 시스템을 구축합니다.
+## Overview
+TDD와 Pydantic v2를 활용하여 간단하고 타입 안전한 터널 관리 시스템을 구현합니다. Pydantic BaseModel을 사용해 강력한 데이터 검증과 직렬화를 제공합니다.
 
-## 설계 원칙
-- **불변 터널 상태**: 모든 터널 상태는 불변 객체로 관리
-- **순수 함수**: 터널 생성/변환 로직은 부수 효과 없는 순수 함수
-- **이벤트 소싱**: 터널 상태 변경을 이벤트로 추적
-- **파이프라인 패턴**: 터널 작업을 함수 조합으로 구성
+## Goals
+- Pydantic v2 BaseModel을 활용한 타입 안전 터널 모델
+- TCP/HTTP 터널 생성 및 관리
+- 강력한 데이터 검증 및 오류 처리
+- Context manager를 통한 자동 리소스 정리
+- 100% TDD 커버리지
 
-## 목표
-- 불변 Tunnel 타입을 통한 터널 추상화
-- Result 타입 기반 에러 처리
-- TCP 터널 생성 및 삭제 기능
-- 터널 상태 추적 및 정보 조회
-- 다중 터널 관리
+## Test-First Implementation with Pydantic
 
-## 구현 범위
-
-### 1. 도메인 모델 (불변 데이터)
+### 1. Pydantic Models
 ```python
-# src/domain/tunnel.py
-from dataclasses import dataclass, frozen, field
-from typing import Optional, List, Dict, Any
+# src/frp_wrapper/tunnel.py
 from datetime import datetime
-from src.domain.types import Result, Ok, Err
+from enum import Enum
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
+from pydantic import HttpUrl, IPvAnyAddress
 
-@frozen
-@dataclass
-class TunnelId:
-    value: str
+class TunnelStatus(str, Enum):
+    """Tunnel status enumeration"""
+    PENDING = "pending"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    DISCONNECTED = "disconnected"
+    ERROR = "error"
+    CLOSED = "closed"
 
-@frozen
-@dataclass
-class Port:
-    value: int
-    
-    def __post_init__(self):
-        if not 1 <= self.value <= 65535:
-            raise ValueError(f"Invalid port: {self.value}")
+class TunnelType(str, Enum):
+    """Tunnel type enumeration"""
+    TCP = "tcp"
+    HTTP = "http"
+    UDP = "udp"
 
-@frozen
-@dataclass
-class TunnelConfig:
-    """터널 설정 정보 (불변)"""
-    local_port: Port
-    tunnel_type: str  # 'tcp', 'http', 'udp'
-    remote_port: Optional[Port] = None
-    custom_domains: List[str] = field(default_factory=list)
-    options: Dict[str, Any] = field(default_factory=dict)
+class BaseTunnel(BaseModel):
+    """Base tunnel model with Pydantic validation"""
 
-@frozen
-@dataclass
-class Tunnel:
-    """개별 터널을 나타내는 불변 타입"""
-    id: TunnelId
-    config: TunnelConfig
-    client_id: ClientId
-    status: str = "pending"  # pending, connecting, connected, disconnected, error, closed
-    created_at: datetime = field(default_factory=datetime.now)
-    connected_at: Optional[datetime] = None
-    error_message: Optional[str] = None
-    
-    def with_status(self, status: str, **kwargs) -> 'Tunnel':
-        """새로운 상태를 가진 터널 반환"""
-        return dataclasses.replace(self, status=status, **kwargs)
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True,
+        extra='forbid',
+        frozen=True,  # Immutable after creation
+        use_enum_values=True
+    )
 
-@frozen
-@dataclass
-class TCPTunnel(Tunnel):
-    """TCP 터널 타입"""
-    
+    id: str = Field(..., min_length=1, description="Unique tunnel identifier")
+    tunnel_type: TunnelType = Field(..., description="Type of tunnel")
+    local_port: int = Field(..., ge=1, le=65535, description="Local port number")
+    status: TunnelStatus = Field(default=TunnelStatus.PENDING, description="Current tunnel status")
+    created_at: datetime = Field(default_factory=datetime.now, description="Creation timestamp")
+    connected_at: Optional[datetime] = Field(None, description="Connection timestamp")
+    error_message: Optional[str] = Field(None, description="Error message if any")
+
+    @field_validator('local_port')
+    @classmethod
+    def validate_port_range(cls, v: int) -> int:
+        """Validate port is in valid range"""
+        if v < 1024:
+            # Warning for privileged ports but don't fail
+            import warnings
+            warnings.warn(f"Port {v} is privileged and may require root access")
+        return v
+
+    def with_status(self, status: TunnelStatus, **kwargs) -> 'BaseTunnel':
+        """Create new tunnel with updated status (immutable pattern)"""
+        update_data = {'status': status, **kwargs}
+        if status == TunnelStatus.CONNECTED and 'connected_at' not in kwargs:
+            update_data['connected_at'] = datetime.now()
+        return self.model_copy(update=update_data)
+
+class TCPTunnel(BaseTunnel):
+    """TCP tunnel with remote port configuration"""
+
+    tunnel_type: TunnelType = Field(default=TunnelType.TCP, frozen=True)
+    remote_port: Optional[int] = Field(None, ge=1, le=65535, description="Remote port number")
+
     @property
     def endpoint(self) -> Optional[str]:
-        """터널 엔드포인트 (host:port)"""
-        if self.config.remote_port and self.status == "connected":
-            return f"{self.server_host}:{self.config.remote_port.value}"
+        """Get tunnel endpoint if connected"""
+        if self.status == TunnelStatus.CONNECTED and self.remote_port:
+            # Server host would be injected during runtime
+            return f"{{server_host}}:{self.remote_port}"
         return None
 
-@frozen
-@dataclass
-class HTTPTunnel(Tunnel):
-    """HTTP 터널 타입"""
-    path: Optional[str] = None
-    custom_domains: List[str] = field(default_factory=list)
-    locations: List[str] = field(default_factory=list)
-    
+class HTTPTunnel(BaseTunnel):
+    """HTTP tunnel with path-based routing using FRP locations"""
+
+    tunnel_type: TunnelType = Field(default=TunnelType.HTTP, frozen=True)
+    path: str = Field(..., min_length=1, description="URL path for routing")
+    custom_domains: List[str] = Field(default_factory=list, description="Custom domains")
+    strip_path: bool = Field(default=True, description="Whether to strip path in requests")
+    websocket: bool = Field(default=True, description="Enable WebSocket support")
+    custom_headers: Dict[str, str] = Field(default_factory=dict, description="Custom headers")
+
+    @field_validator('path')
+    @classmethod
+    def validate_path(cls, v: str) -> str:
+        """Validate path format"""
+        if v.startswith('/'):
+            raise ValueError("Path should not start with '/'")
+        if not v.replace('-', '').replace('_', '').isalnum():
+            raise ValueError("Path should contain only alphanumeric characters, hyphens, and underscores")
+        return v
+
     @property
     def url(self) -> Optional[str]:
-        """터널 접속 URL"""
-        if self.status == "connected" and self.path:
-            return f"https://{self.server_host}/{self.path}/"
+        """Get tunnel URL if connected"""
+        if self.status == TunnelStatus.CONNECTED and self.custom_domains:
+            domain = self.custom_domains[0]
+            return f"https://{domain}/{self.path}/"
         return None
+
+    @property
+    def locations(self) -> List[str]:
+        """Get FRP locations configuration"""
+        return [f"/{self.path}"]
+
+class TunnelConfig(BaseModel):
+    """Configuration for creating tunnels"""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        extra='forbid'
+    )
+
+    server_host: str = Field(..., min_length=1, description="FRP server hostname")
+    auth_token: Optional[str] = Field(None, description="Authentication token")
+    default_domain: Optional[str] = Field(None, description="Default domain for HTTP tunnels")
+    max_tunnels: int = Field(default=10, ge=1, le=100, description="Maximum concurrent tunnels")
+
+    @field_validator('server_host')
+    @classmethod
+    def validate_server_host(cls, v: str) -> str:
+        """Validate server hostname format"""
+        if not v.replace('.', '').replace('-', '').isalnum():
+            raise ValueError("Invalid hostname format")
+        return v
 ```
 
-### 2. 순수 함수 (터널 연산)
+### 2. Test Structure with Pydantic
 ```python
-# src/core/tunnel_operations.py
-from typing import Tuple, List, Optional
-from src.domain.tunnel import Tunnel, TCPTunnel, TunnelId, Port, TunnelConfig
-from src.domain.events import TunnelCreated, TunnelConnected, TunnelClosed
-from src.domain.types import Result, Ok, Err
-import uuid
+# tests/test_tunnel.py
+import pytest
+from datetime import datetime
+from pydantic import ValidationError
+from frp_wrapper.tunnel import BaseTunnel, TCPTunnel, HTTPTunnel, TunnelStatus, TunnelType, TunnelConfig
 
-def create_tcp_tunnel(
-    client_id: ClientId,
-    local_port: int,
-    remote_port: Optional[int] = None
-) -> Result[TCPTunnel, str]:
-    """TCP 터널 생성 - 순수 함수"""
-    try:
-        config = TunnelConfig(
-            local_port=Port(local_port),
-            tunnel_type="tcp",
-            remote_port=Port(remote_port) if remote_port else None
+class TestBaseTunnel:
+    def test_tunnel_creation_with_valid_data(self):
+        """Test tunnel creation with valid Pydantic data"""
+        tunnel = BaseTunnel(
+            id="test-tunnel-1",
+            tunnel_type=TunnelType.TCP,
+            local_port=3000
         )
-        
+
+        assert tunnel.id == "test-tunnel-1"
+        assert tunnel.tunnel_type == TunnelType.TCP
+        assert tunnel.local_port == 3000
+        assert tunnel.status == TunnelStatus.PENDING
+        assert isinstance(tunnel.created_at, datetime)
+
+    def test_tunnel_port_validation(self):
+        """Test port validation with Pydantic validators"""
+        # Valid port
+        tunnel = BaseTunnel(id="test", tunnel_type=TunnelType.TCP, local_port=8080)
+        assert tunnel.local_port == 8080
+
+        # Invalid ports
+        with pytest.raises(ValidationError) as exc_info:
+            BaseTunnel(id="test", tunnel_type=TunnelType.TCP, local_port=0)
+
+        errors = exc_info.value.errors()
+        assert any("greater than or equal to 1" in str(error) for error in errors)
+
+        with pytest.raises(ValidationError):
+            BaseTunnel(id="test", tunnel_type=TunnelType.TCP, local_port=65536)
+
+    def test_tunnel_immutability(self):
+        """Test that tunnel is immutable after creation"""
+        tunnel = BaseTunnel(id="test", tunnel_type=TunnelType.TCP, local_port=3000)
+
+        # Pydantic frozen model should prevent direct modification
+        with pytest.raises(ValidationError):
+            tunnel.status = TunnelStatus.CONNECTED
+
+    def test_tunnel_with_status_creates_new_instance(self):
+        """Test immutable status update pattern"""
+        tunnel = BaseTunnel(id="test", tunnel_type=TunnelType.TCP, local_port=3000)
+
+        connected_tunnel = tunnel.with_status(TunnelStatus.CONNECTED)
+
+        # Original tunnel unchanged
+        assert tunnel.status == TunnelStatus.PENDING
+        assert tunnel.connected_at is None
+
+        # New tunnel has updated status
+        assert connected_tunnel.status == TunnelStatus.CONNECTED
+        assert connected_tunnel.connected_at is not None
+        assert connected_tunnel.id == tunnel.id  # Other fields preserved
+
+class TestTCPTunnel:
+    def test_tcp_tunnel_creation(self):
+        """Test TCP tunnel creation with Pydantic validation"""
         tunnel = TCPTunnel(
-            id=TunnelId(str(uuid.uuid4())),
-            config=config,
-            client_id=client_id
+            id="tcp-test",
+            local_port=3000,
+            remote_port=8080
         )
-        
-        return Ok(tunnel)
-    except ValueError as e:
-        return Err(str(e))
 
-def connect_tunnel(
-    tunnel: Tunnel,
-    allocated_port: Optional[int] = None
-) -> Tuple[Tunnel, TunnelConnected]:
-    """터널 연결 - 새 상태와 이벤트 반환"""
-    if tunnel.status != "pending":
-        raise InvalidStateError(f"Cannot connect tunnel in {tunnel.status} state")
-    
-    # TCP 터널이고 원격 포트가 없으면 할당된 포트 사용
-    if isinstance(tunnel, TCPTunnel) and not tunnel.config.remote_port and allocated_port:
-        new_config = dataclasses.replace(
-            tunnel.config,
-            remote_port=Port(allocated_port)
+        assert tunnel.tunnel_type == TunnelType.TCP
+        assert tunnel.local_port == 3000
+        assert tunnel.remote_port == 8080
+
+    def test_tcp_tunnel_endpoint_property(self):
+        """Test TCP tunnel endpoint generation"""
+        tunnel = TCPTunnel(
+            id="tcp-test",
+            local_port=3000,
+            remote_port=8080
         )
-        connected_tunnel = dataclasses.replace(
-            tunnel,
-            config=new_config,
-            status="connected",
-            connected_at=datetime.now()
-        )
-    else:
-        connected_tunnel = tunnel.with_status(
-            "connected",
-            connected_at=datetime.now()
-        )
-    
-    event = TunnelConnected(
-        tunnel_id=tunnel.id,
-        occurred_at=datetime.now()
-    )
-    
-    return connected_tunnel, event
 
-def close_tunnel(
-    tunnel: Tunnel,
-    reason: Optional[str] = None
-) -> Tuple[Tunnel, TunnelClosed]:
-    """터널 종료 - 새 상태와 이벤트 반환"""
-    if tunnel.status == "closed":
-        raise InvalidStateError("Tunnel is already closed")
-    
-    closed_tunnel = tunnel.with_status(
-        "closed",
-        error_message=reason
-    )
-    
-    event = TunnelClosed(
-        tunnel_id=tunnel.id,
-        reason=reason,
-        occurred_at=datetime.now()
-    )
-    
-    return closed_tunnel, event
+        # No endpoint when not connected
+        assert tunnel.endpoint is None
 
-def tunnel_to_config_entry(tunnel: Tunnel) -> Dict[str, Any]:
-    """터널을 설정 엔트리로 변환 - 순수 함수"""
-    entry = {
-        'name': tunnel.id.value,
-        'type': tunnel.config.tunnel_type,
-        'local_ip': '127.0.0.1',
-        'local_port': tunnel.config.local_port.value
-    }
-    
-    if isinstance(tunnel, TCPTunnel) and tunnel.config.remote_port:
-        entry['remote_port'] = tunnel.config.remote_port.value
-    elif isinstance(tunnel, HTTPTunnel):
-        if tunnel.custom_domains:
-            entry['custom_domains'] = tunnel.custom_domains
-        if tunnel.locations:
-            entry['locations'] = tunnel.locations
-        # 추가 HTTP 설정
-    
-    # 추가 옵션
-    entry.update(tunnel.config.options)
-    
-    return entry
+        # Endpoint available when connected
+        connected_tunnel = tunnel.with_status(TunnelStatus.CONNECTED)
+        assert "{server_host}:8080" in connected_tunnel.endpoint
 
-def validate_tunnel(tunnel: Tunnel) -> Result[Tunnel, List[str]]:
-    """터널 유효성 검증 - 순수 함수"""
-    errors = []
-    
-    # 포트 검증
-    if tunnel.config.local_port.value < 1024:
-        errors.append("Privileged ports (<1024) require root access")
-    
-    # TCP 터널 검증
-    if isinstance(tunnel, TCPTunnel):
-        if tunnel.config.remote_port and tunnel.config.remote_port.value < 1024:
-            errors.append("Remote privileged ports not allowed")
-    
-    # HTTP 터널 검증
-    if isinstance(tunnel, HTTPTunnel):
-        if tunnel.path and len(tunnel.path) > 100:
-            errors.append("Path too long (max 100 characters)")
-    
-    return Ok(tunnel) if not errors else Err(errors)
-```
-
-### 3. 터널 관리 함수
-```python
-# src/core/tunnel_manager.py
-from typing import Dict, List, Optional
-from src.domain.tunnel import Tunnel, TunnelId
-from src.domain.types import Result, Ok, Err
-
-def add_tunnel_to_registry(
-    registry: Dict[str, Tunnel],
-    tunnel: Tunnel
-) -> Dict[str, Tunnel]:
-    """터널을 레지스트리에 추가 - 순수 함수"""
-    return {**registry, tunnel.id.value: tunnel}
-
-def remove_tunnel_from_registry(
-    registry: Dict[str, Tunnel],
-    tunnel_id: TunnelId
-) -> Dict[str, Tunnel]:
-    """터널을 레지스트리에서 제거 - 순수 함수"""
-    return {k: v for k, v in registry.items() if k != tunnel_id.value}
-
-def update_tunnel_in_registry(
-    registry: Dict[str, Tunnel],
-    tunnel: Tunnel
-) -> Dict[str, Tunnel]:
-    """레지스트리의 터널 업데이트 - 순수 함수"""
-    if tunnel.id.value not in registry:
-        raise KeyError(f"Tunnel {tunnel.id.value} not found in registry")
-    
-    return {**registry, tunnel.id.value: tunnel}
-
-def find_tunnels_by_status(
-    registry: Dict[str, Tunnel],
-    status: str
-) -> List[Tunnel]:
-    """상태별 터널 찾기 - 순수 함수"""
-    return [t for t in registry.values() if t.status == status]
-
-def find_tunnels_by_client(
-    registry: Dict[str, Tunnel],
-    client_id: ClientId
-) -> List[Tunnel]:
-    """클라이언트별 터널 찾기 - 순수 함수"""
-    return [t for t in registry.values() if t.client_id == client_id]
-```
-
-### 4. 이펙트 인터페이스
-```python
-# src/effects/protocols.py
-from typing import Protocol, Optional
-from src.domain.types import Result
-
-class PortAllocator(Protocol):
-    """포트 할당 인터페이스"""
-    
-    def allocate_port(self, preferred: Optional[int] = None) -> Result[int, str]:
-        """사용 가능한 포트 할당"""
-        ...
-    
-    def release_port(self, port: int) -> Result[None, str]:
-        """할당된 포트 해제"""
-        ...
-    
-    def is_port_available(self, port: int) -> bool:
-        """포트 사용 가능 여부 확인"""
-        ...
-
-class TunnelMonitor(Protocol):
-    """터널 모니터링 인터페이스"""
-    
-    def check_tunnel_health(self, tunnel_id: str) -> Result[bool, str]:
-        """터널 상태 확인"""
-        ...
-    
-    def get_tunnel_metrics(self, tunnel_id: str) -> Result[Dict[str, Any], str]:
-        """터널 메트릭 조회"""
-        ...
-```
-
-### 5. 애플리케이션 서비스
-```python
-# src/application/tunnel_service.py
-from typing import Dict, List, Optional
-from src.domain.tunnel import Tunnel, TunnelId
-from src.domain.client import Client
-from src.domain.types import Result, Ok, Err
-from src.core import tunnel_operations, tunnel_manager, config_builder
-from src.effects.protocols import ProcessExecutor, FileWriter, PortAllocator, EventStore
-from src.application.pipelines import pipe, flat_map_result, map_result
-
-class TunnelService:
-    """터널 관리 서비스 - 순수 함수들을 조합"""
-    
-    def __init__(
-        self,
-        process_executor: ProcessExecutor,
-        file_writer: FileWriter,
-        port_allocator: PortAllocator,
-        event_store: EventStore
-    ):
-        self._process_executor = process_executor
-        self._file_writer = file_writer
-        self._port_allocator = port_allocator
-        self._event_store = event_store
-        self._tunnels: Dict[str, Tunnel] = {}
-    
-    def create_tcp_tunnel(
-        self,
-        client: Client,
-        local_port: int,
-        remote_port: Optional[int] = None
-    ) -> Result[Tunnel, str]:
-        """TCP 터널 생성 파이프라인"""
-        
-        # 1. 연결 상태 확인
-        if client.connection_state.status != "connected":
-            return Err("Client is not connected")
-        
-        # 2. 터널 생성 및 연결 파이프라인
-        return pipe(
-            lambda _: tunnel_operations.create_tcp_tunnel(
-                client.id, local_port, remote_port
-            ),
-            flat_map_result(tunnel_operations.validate_tunnel),
-            flat_map_result(lambda t: self._allocate_port_if_needed(t)),
-            flat_map_result(lambda t: self._add_tunnel_to_config(t, client)),
-            flat_map_result(lambda data: self._restart_and_connect(data)),
-            map_result(lambda data: self._finalize_tunnel(data))
-        )(None)
-    
-    def _allocate_port_if_needed(
-        self,
-        tunnel: Tunnel
-    ) -> Result[Tunnel, str]:
-        """필요시 원격 포트 할당"""
-        if isinstance(tunnel, TCPTunnel) and not tunnel.config.remote_port:
-            # 포트 할당 (Effect)
-            port_result = self._port_allocator.allocate_port()
-            if port_result.is_err():
-                return Err(f"Failed to allocate port: {port_result.error}")
-            
-            allocated_port = port_result.unwrap()
-            
-            # 새 설정으로 터널 생성
-            new_config = dataclasses.replace(
-                tunnel.config,
-                remote_port=Port(allocated_port)
+    def test_tcp_tunnel_validation_errors(self):
+        """Test TCP tunnel Pydantic validation"""
+        with pytest.raises(ValidationError):
+            TCPTunnel(
+                id="",  # Empty ID should fail
+                local_port=3000
             )
-            new_tunnel = dataclasses.replace(tunnel, config=new_config)
-            
-            return Ok(new_tunnel)
-        
-        return Ok(tunnel)
-    
-    def _add_tunnel_to_config(
-        self,
-        tunnel: Tunnel,
-        client: Client
-    ) -> Result[Dict[str, Any], str]:
-        """터널을 설정에 추가"""
-        # 현재 설정 가져오기
-        current_config = self._get_current_config(client)
-        
-        # 터널 설정 엔트리 생성 (순수)
-        tunnel_entry = tunnel_operations.tunnel_to_config_entry(tunnel)
-        
-        # 설정에 터널 추가 (순수)
-        new_config = config_builder.add_tunnel_to_config(
-            current_config,
-            tunnel_entry
+
+        with pytest.raises(ValidationError):
+            TCPTunnel(
+                id="test",
+                local_port=3000,
+                remote_port=99999  # Invalid port
+            )
+
+class TestHTTPTunnel:
+    def test_http_tunnel_creation(self):
+        """Test HTTP tunnel creation with path validation"""
+        tunnel = HTTPTunnel(
+            id="http-test",
+            local_port=3000,
+            path="myapp",
+            custom_domains=["example.com"]
         )
-        
-        # 설정 파일 작성 (Effect)
-        config_content = config_builder.build_ini_content(new_config)
-        write_result = self._file_writer.write_temp(config_content)
-        
-        if write_result.is_err():
-            return Err(f"Failed to write config: {write_result.error}")
-        
-        config_path = write_result.unwrap()
-        
-        return Ok({
-            'tunnel': tunnel,
-            'client': client,
-            'config': new_config,
-            'config_path': config_path
-        })
-    
-    def _restart_and_connect(
-        self,
-        data: Dict[str, Any]
-    ) -> Result[Dict[str, Any], str]:
-        """프로세스 재시작 및 터널 연결"""
-        tunnel = data['tunnel']
-        client = data['client']
-        config_path = data['config_path']
-        
-        # 프로세스 재시작 (Effect)
-        restart_result = self._restart_client_process(client, config_path)
-        if restart_result.is_err():
-            return restart_result
-        
-        # 터널 연결 대기
-        if self._wait_for_tunnel(tunnel.id):
-            # 터널 연결 상태 업데이트 (순수)
-            connected_tunnel, event = tunnel_operations.connect_tunnel(tunnel)
-            
-            # 이벤트 저장
-            self._event_store.append(event)
-            
-            return Ok({
-                **data,
-                'tunnel': connected_tunnel
-            })
-        else:
-            return Err(f"Failed to connect tunnel {tunnel.id.value}")
-    
-    def _finalize_tunnel(self, data: Dict[str, Any]) -> Tunnel:
-        """터널 생성 완료 처리"""
-        tunnel = data['tunnel']
-        
-        # 레지스트리에 추가 (순수 함수로 새 레지스트리 생성)
-        self._tunnels = tunnel_manager.add_tunnel_to_registry(
-            self._tunnels,
-            tunnel
+
+        assert tunnel.tunnel_type == TunnelType.HTTP
+        assert tunnel.path == "myapp"
+        assert tunnel.custom_domains == ["example.com"]
+        assert tunnel.strip_path is True  # Default value
+        assert tunnel.websocket is True  # Default value
+
+    def test_http_tunnel_path_validation(self):
+        """Test HTTP tunnel path validation with Pydantic validators"""
+        # Valid paths
+        HTTPTunnel(id="test", local_port=3000, path="myapp")
+        HTTPTunnel(id="test", local_port=3000, path="my-app")
+        HTTPTunnel(id="test", local_port=3000, path="my_app")
+        HTTPTunnel(id="test", local_port=3000, path="app123")
+
+        # Invalid paths
+        with pytest.raises(ValidationError, match="Path should not start with"):
+            HTTPTunnel(id="test", local_port=3000, path="/myapp")
+
+        with pytest.raises(ValidationError, match="alphanumeric characters"):
+            HTTPTunnel(id="test", local_port=3000, path="my@app")
+
+    def test_http_tunnel_url_property(self):
+        """Test HTTP tunnel URL generation"""
+        tunnel = HTTPTunnel(
+            id="http-test",
+            local_port=3000,
+            path="myapp",
+            custom_domains=["example.com"]
         )
-        
-        # 생성 이벤트 발행
-        event = TunnelCreated(
-            tunnel_id=tunnel.id,
-            tunnel_type=tunnel.config.tunnel_type,
-            occurred_at=datetime.now()
+
+        # No URL when not connected
+        assert tunnel.url is None
+
+        # URL available when connected
+        connected_tunnel = tunnel.with_status(TunnelStatus.CONNECTED)
+        assert connected_tunnel.url == "https://example.com/myapp/"
+
+    def test_http_tunnel_locations_property(self):
+        """Test FRP locations configuration"""
+        tunnel = HTTPTunnel(
+            id="http-test",
+            local_port=3000,
+            path="myapp"
         )
-        self._event_store.append(event)
-        
+
+        assert tunnel.locations == ["/myapp"]
+
+class TestTunnelConfig:
+    def test_config_creation_with_validation(self):
+        """Test tunnel configuration with Pydantic validation"""
+        config = TunnelConfig(
+            server_host="tunnel.example.com",
+            auth_token="secret123",
+            default_domain="example.com",
+            max_tunnels=5
+        )
+
+        assert config.server_host == "tunnel.example.com"
+        assert config.auth_token == "secret123"
+        assert config.max_tunnels == 5
+
+    def test_config_validation_errors(self):
+        """Test configuration validation errors"""
+        with pytest.raises(ValidationError):
+            TunnelConfig(server_host="")  # Empty hostname
+
+        with pytest.raises(ValidationError):
+            TunnelConfig(
+                server_host="example.com",
+                max_tunnels=0  # Below minimum
+            )
+
+        with pytest.raises(ValidationError):
+            TunnelConfig(
+                server_host="example.com",
+                max_tunnels=101  # Above maximum
+            )
+
+# Pydantic serialization/deserialization tests
+class TestTunnelSerialization:
+    def test_tunnel_to_dict(self):
+        """Test tunnel serialization to dict"""
+        tunnel = HTTPTunnel(
+            id="http-test",
+            local_port=3000,
+            path="myapp",
+            custom_domains=["example.com"]
+        )
+
+        data = tunnel.model_dump()
+
+        assert data['id'] == "http-test"
+        assert data['tunnel_type'] == "http"
+        assert data['local_port'] == 3000
+        assert data['path'] == "myapp"
+
+    def test_tunnel_from_dict(self):
+        """Test tunnel deserialization from dict"""
+        data = {
+            'id': 'http-test',
+            'tunnel_type': 'http',
+            'local_port': 3000,
+            'path': 'myapp',
+            'custom_domains': ['example.com']
+        }
+
+        tunnel = HTTPTunnel.model_validate(data)
+
+        assert tunnel.id == "http-test"
+        assert tunnel.tunnel_type == TunnelType.HTTP
+        assert tunnel.local_port == 3000
+        assert tunnel.path == "myapp"
+
+    def test_tunnel_json_serialization(self):
+        """Test tunnel JSON serialization"""
+        tunnel = TCPTunnel(
+            id="tcp-test",
+            local_port=3000,
+            remote_port=8080
+        )
+
+        json_str = tunnel.model_dump_json()
+        restored_tunnel = TCPTunnel.model_validate_json(json_str)
+
+        assert restored_tunnel.id == tunnel.id
+        assert restored_tunnel.local_port == tunnel.local_port
+        assert restored_tunnel.remote_port == tunnel.remote_port
+```
+
+### 3. Tunnel Manager with Pydantic
+```python
+# src/frp_wrapper/tunnel_manager.py
+from typing import Dict, List, Optional, Union
+from pydantic import BaseModel, ConfigDict, Field
+from .tunnel import BaseTunnel, TCPTunnel, HTTPTunnel, TunnelStatus, TunnelConfig
+from .exceptions import TunnelError, TunnelNotFoundError
+
+class TunnelRegistry(BaseModel):
+    """Pydantic model for managing tunnel registry"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    tunnels: Dict[str, BaseTunnel] = Field(default_factory=dict)
+    max_tunnels: int = Field(default=10, ge=1, le=100)
+
+    def add_tunnel(self, tunnel: BaseTunnel) -> None:
+        """Add tunnel to registry with validation"""
+        if len(self.tunnels) >= self.max_tunnels:
+            raise TunnelError(f"Maximum number of tunnels ({self.max_tunnels}) reached")
+
+        if tunnel.id in self.tunnels:
+            raise TunnelError(f"Tunnel with ID {tunnel.id} already exists")
+
+        self.tunnels[tunnel.id] = tunnel
+
+    def remove_tunnel(self, tunnel_id: str) -> BaseTunnel:
+        """Remove tunnel from registry"""
+        if tunnel_id not in self.tunnels:
+            raise TunnelNotFoundError(f"Tunnel {tunnel_id} not found")
+
+        return self.tunnels.pop(tunnel_id)
+
+    def get_tunnel(self, tunnel_id: str) -> BaseTunnel:
+        """Get tunnel by ID"""
+        if tunnel_id not in self.tunnels:
+            raise TunnelNotFoundError(f"Tunnel {tunnel_id} not found")
+
+        return self.tunnels[tunnel_id]
+
+    def update_tunnel(self, tunnel: BaseTunnel) -> None:
+        """Update existing tunnel"""
+        if tunnel.id not in self.tunnels:
+            raise TunnelNotFoundError(f"Tunnel {tunnel.id} not found")
+
+        self.tunnels[tunnel.id] = tunnel
+
+    def list_tunnels(self, status: Optional[TunnelStatus] = None) -> List[BaseTunnel]:
+        """List tunnels, optionally filtered by status"""
+        tunnels = list(self.tunnels.values())
+
+        if status:
+            tunnels = [t for t in tunnels if t.status == status]
+
+        return tunnels
+
+    def get_stats(self) -> Dict[str, int]:
+        """Get tunnel statistics"""
+        stats = {status.value: 0 for status in TunnelStatus}
+
+        for tunnel in self.tunnels.values():
+            stats[tunnel.status.value] += 1
+
+        stats['total'] = len(self.tunnels)
+        return stats
+
+class TunnelManager:
+    """Main tunnel manager with Pydantic models"""
+
+    def __init__(self, config: TunnelConfig):
+        self.config = config
+        self.registry = TunnelRegistry(max_tunnels=config.max_tunnels)
+
+    def create_tcp_tunnel(self, tunnel_id: str, local_port: int,
+                         remote_port: Optional[int] = None) -> TCPTunnel:
+        """Create TCP tunnel with Pydantic validation"""
+        tunnel = TCPTunnel(
+            id=tunnel_id,
+            local_port=local_port,
+            remote_port=remote_port
+        )
+
+        self.registry.add_tunnel(tunnel)
         return tunnel
-    
-    def close_tunnel(
-        self,
-        tunnel_id: TunnelId
-    ) -> Result[Tunnel, str]:
-        """터널 종료"""
-        if tunnel_id.value not in self._tunnels:
-            return Err(f"Tunnel {tunnel_id.value} not found")
-        
-        tunnel = self._tunnels[tunnel_id.value]
-        
-        # 터널 종료 (순수)
-        closed_tunnel, event = tunnel_operations.close_tunnel(tunnel)
-        
-        # 설정에서 제거
-        config_result = self._remove_tunnel_from_config(tunnel)
-        if config_result.is_err():
-            return config_result
-        
-        # 포트 해제 (TCP 터널의 경우)
-        if isinstance(tunnel, TCPTunnel) and tunnel.config.remote_port:
-            self._port_allocator.release_port(tunnel.config.remote_port.value)
-        
-        # 레지스트리에서 제거 (순수)
-        self._tunnels = tunnel_manager.remove_tunnel_from_registry(
-            self._tunnels,
-            tunnel_id
+
+    def create_http_tunnel(self, tunnel_id: str, local_port: int, path: str,
+                          custom_domains: Optional[List[str]] = None,
+                          **kwargs) -> HTTPTunnel:
+        """Create HTTP tunnel with Pydantic validation"""
+        if custom_domains is None and self.config.default_domain:
+            custom_domains = [self.config.default_domain]
+
+        tunnel = HTTPTunnel(
+            id=tunnel_id,
+            local_port=local_port,
+            path=path,
+            custom_domains=custom_domains or [],
+            **kwargs
         )
-        
-        # 이벤트 저장
-        self._event_store.append(event)
-        
-        return Ok(closed_tunnel)
-    
-    def list_tunnels(self, client_id: Optional[ClientId] = None) -> List[Tunnel]:
-        """터널 목록 조회"""
-        if client_id:
-            return tunnel_manager.find_tunnels_by_client(self._tunnels, client_id)
-        return list(self._tunnels.values())
+
+        self.registry.add_tunnel(tunnel)
+        return tunnel
+
+    def close_tunnel(self, tunnel_id: str) -> BaseTunnel:
+        """Close tunnel and remove from registry"""
+        tunnel = self.registry.get_tunnel(tunnel_id)
+        closed_tunnel = tunnel.with_status(TunnelStatus.CLOSED)
+
+        self.registry.remove_tunnel(tunnel_id)
+        return closed_tunnel
+
+    def get_tunnel_info(self, tunnel_id: str) -> Dict:
+        """Get tunnel information as dict"""
+        tunnel = self.registry.get_tunnel(tunnel_id)
+        return tunnel.model_dump()
+
+    def export_config(self) -> Dict:
+        """Export all tunnels configuration"""
+        return {
+            'config': self.config.model_dump(),
+            'tunnels': [tunnel.model_dump() for tunnel in self.registry.tunnels.values()]
+        }
 ```
 
-### 6. 공개 API
-```python
-# src/api/client.py (기존 Client 클래스에 추가)
+## Implementation Timeline (TDD + Pydantic)
 
-class Client:
-    """FRP 클라이언트 API 래퍼"""
-    
-    def __init__(self, container: Container):
-        self._container = container
-        self._tunnel_service = container.resolve(TunnelService)
-        self._client_data = None  # 불변 Client 객체 참조
-    
-    def expose_tcp(
-        self,
-        local_port: int,
-        remote_port: Optional[int] = None
-    ) -> Result[Tunnel, str]:
-        """
-        TCP 포트를 외부에 노출
-        
-        Args:
-            local_port: 로컬 포트 번호
-            remote_port: 원격 포트 번호 (None이면 자동 할당)
-        
-        Returns:
-            Result[Tunnel, str]: 성공 시 Ok(tunnel), 실패 시 Err(message)
-        
-        Example:
-            >>> result = client.expose_tcp(3000, 8080)
-            >>> match result:
-            ...     case Ok(tunnel):
-            ...         print(f"Tunnel endpoint: {tunnel.endpoint}")
-            ...     case Err(error):
-            ...         print(f"Failed: {error}")
-        """
-        return self._tunnel_service.create_tcp_tunnel(
-            self._client_data,
-            local_port,
-            remote_port
-        )
-    
-    def list_tunnels(self) -> List[Tunnel]:
-        """활성 터널 목록 조회"""
-        return self._tunnel_service.list_tunnels(self._client_data.id)
-    
-    def close_tunnel(self, tunnel_id: TunnelId) -> Result[None, str]:
-        """특정 터널 종료"""
-        result = self._tunnel_service.close_tunnel(tunnel_id)
-        return Ok(None) if result.is_ok() else Err(result.error)
+### Day 1: Pydantic Models
+1. **Setup Pydantic environment**: Install Pydantic v2, configure
+2. **Write model tests**: Validation, serialization, deserialization
+3. **Implement Pydantic models**: BaseTunnel, TCPTunnel, HTTPTunnel
+4. **Custom validators**: Path validation, port validation
+
+### Day 2: Tunnel Manager
+1. **Write manager tests**: CRUD operations, validation
+2. **Implement TunnelRegistry**: Pydantic-based registry
+3. **Implement TunnelManager**: High-level tunnel operations
+4. **Integration with config**: TunnelConfig validation
+
+### Day 3: Context Managers & Advanced Features
+1. **Context manager tests**: Automatic cleanup
+2. **Implement tunnel context managers**: Auto-close functionality
+3. **Serialization tests**: JSON export/import
+4. **Performance tests**: Pydantic validation performance
+
+## File Structure
 ```
-
-## 테스트 시나리오
-
-### 순수 함수 테스트
-
-1. **TCP 터널 생성 테스트**
-   ```python
-   def test_create_tcp_tunnel():
-       client_id = ClientId("test-client")
-       result = create_tcp_tunnel(client_id, 3000, 8080)
-       
-       assert result.is_ok()
-       tunnel = result.unwrap()
-       assert tunnel.config.local_port.value == 3000
-       assert tunnel.config.remote_port.value == 8080
-       assert tunnel.status == "pending"
-   ```
-
-2. **터널 상태 전환 테스트**
-   ```python
-   def test_tunnel_state_transitions():
-       # 터널 생성
-       tunnel = create_tcp_tunnel(ClientId("test"), 3000).unwrap()
-       
-       # 연결 테스트
-       connected_tunnel, event = connect_tunnel(tunnel, 8080)
-       assert connected_tunnel.status == "connected"
-       assert connected_tunnel.connected_at is not None
-       assert isinstance(event, TunnelConnected)
-       
-       # 종료 테스트
-       closed_tunnel, event = close_tunnel(connected_tunnel, "test complete")
-       assert closed_tunnel.status == "closed"
-       assert isinstance(event, TunnelClosed)
-   ```
-
-3. **터널 설정 변환 테스트**
-   ```python
-   def test_tunnel_to_config_entry():
-       tunnel = create_tcp_tunnel(ClientId("test"), 3000, 8080).unwrap()
-       entry = tunnel_to_config_entry(tunnel)
-       
-       assert entry['name'] == tunnel.id.value
-       assert entry['type'] == 'tcp'
-       assert entry['local_port'] == 3000
-       assert entry['remote_port'] == 8080
-   ```
-
-### 속성 기반 테스트
-
-```python
-from hypothesis import given, strategies as st
-
-@given(
-    local_port=st.integers(min_value=1024, max_value=65535),
-    remote_port=st.integers(min_value=1024, max_value=65535)
-)
-def test_tcp_tunnel_properties(local_port, remote_port):
-    """유효한 포트에 대한 TCP 터널 생성"""
-    result = create_tcp_tunnel(ClientId("test"), local_port, remote_port)
-    
-    assert result.is_ok()
-    tunnel = result.unwrap()
-    assert tunnel.config.local_port.value == local_port
-    assert tunnel.config.remote_port.value == remote_port
-    
-    # 불변성 테스트
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        tunnel.status = "connected"
-```
-
-### 이펙트 모킹 테스트
-
-```python
-def test_tunnel_service_with_mocks():
-    # Mock 생성
-    port_allocator = Mock(spec=PortAllocator)
-    port_allocator.allocate_port.return_value = Ok(8080)
-    
-    process_executor = Mock(spec=ProcessExecutor)
-    file_writer = Mock(spec=FileWriter)
-    file_writer.write_temp.return_value = Ok("/tmp/test.ini")
-    
-    event_store = Mock(spec=EventStore)
-    
-    # 서비스 테스트
-    service = TunnelService(
-        process_executor=process_executor,
-        file_writer=file_writer,
-        port_allocator=port_allocator,
-        event_store=event_store
-    )
-    
-    # 연결된 클라이언트 생성
-    client = create_test_connected_client()
-    
-    # TCP 터널 생성
-    result = service.create_tcp_tunnel(client, 3000)
-    
-    assert result.is_ok()
-    tunnel = result.unwrap()
-    assert tunnel.config.remote_port.value == 8080
-    assert port_allocator.allocate_port.called
-    assert file_writer.write_temp.called
-```
-
-### 통합 테스트
-
-1. **실제 TCP 터널 테스트**
-   - 로컬 TCP 서버 시작
-   - Docker 컨테이너에서 FRP 서버 실행
-   - 터널 생성 및 연결 테스트
-   - 외부에서 연결 확인
-
-2. **다중 터널 관리**
-   - 여러 터널 생성
-   - 터널 목록 조회
-   - 선택적 터널 종료
-   - 상태 일관성 확인
-
-## 파일 구조
-```
-src/
-├── domain/
-│   ├── __init__.py
-│   ├── tunnel.py           # Tunnel, TCPTunnel, HTTPTunnel
-│   └── events.py           # TunnelCreated, TunnelConnected
-├── core/
-│   ├── __init__.py
-│   ├── tunnel_operations.py  # 터널 관련 순수 함수
-│   └── tunnel_manager.py      # 터널 관리 순수 함수
-├── effects/
-│   ├── __init__.py
-│   ├── protocols.py        # PortAllocator, TunnelMonitor
-│   └── port_effects.py     # NetworkPortAllocator 구현
-├── application/
-│   ├── __init__.py
-│   └── tunnel_service.py   # TunnelService (조합)
-└── api/
-    └── client.py           # Client 터널 메서드 추가
+src/frp_wrapper/
+├── __init__.py
+├── tunnel.py           # Pydantic tunnel models
+├── tunnel_manager.py   # TunnelManager with Pydantic
+├── client.py           # FRPClient (from checkpoint 2)
+├── process.py          # ProcessManager (from checkpoint 1)
+├── config.py           # ConfigBuilder with Pydantic
+└── exceptions.py       # Custom exceptions
 
 tests/
 ├── __init__.py
-├── test_domain/
-│   └── test_tunnel.py      # 도메인 모델 테스트
-├── test_core/
-│   ├── test_tunnel_operations.py  # 순수 함수 테스트
-│   └── test_tunnel_manager.py     # 관리 함수 테스트
-└── test_application/
-    └── test_tunnel_service.py      # 서비스 테스트
+├── test_tunnel.py      # Pydantic model tests
+├── test_tunnel_manager.py  # Manager tests
+└── test_tunnel_integration.py  # Integration tests
 ```
 
-## 완료 기준
+## Success Criteria
+- [ ] 100% test coverage with Pydantic models
+- [ ] All validation scenarios tested
+- [ ] Serialization/deserialization works perfectly
+- [ ] Type safety with mypy
+- [ ] Performance benchmarks with Pydantic
+- [ ] Context managers for resource cleanup
+- [ ] Integration with FRP configuration
 
-### 필수 기능
-- [x] 터널 도메인 모델 정의
-- [x] TCP 터널 생성 순수 함수
-- [x] 터널 상태 전환 순수 함수
-- [x] 터널 관리 순수 함수
-- [x] Result 타입 기반 에러 처리
+## Key Pydantic Benefits
+1. **Automatic Validation**: Built-in type and constraint validation
+2. **Serialization**: Easy JSON/dict export/import
+3. **Type Safety**: Full mypy compatibility
+4. **Performance**: Rust-powered validation (v2)
+5. **Documentation**: Auto-generated field documentation
+6. **IDE Support**: Excellent autocomplete and error detection
 
-### 테스트
-- [x] 순수 함수 단위 테스트
-- [x] 속성 기반 테스트
-- [x] 이펙트 모킹 테스트
-- [x] 상태 전환 검증
-
-### 문서
-- [x] 모든 함수에 타입 힌트와 docstring
-- [x] 함수형 사용 예제
-- [x] 도메인 모델 설명
-
-## 예상 작업 시간
-- 도메인 모델 설계: 3시간
-- 순수 함수 구현: 4시간
-- 터널 관리 함수: 3시간
-- 서비스 계층 구현: 5시간
-- 테스트 작성: 5시간
-- 문서화: 2시간
-
-**총 예상 시간**: 22시간 (4.5일)
-
-## 다음 단계 준비
-- HTTPTunnel 도메인 모델
-- 서브패스 라우팅 설계
-- URL 생성 로직
-
-## 참고 사항
-- 터널 상태는 완전히 불변
-- 모든 상태 변경은 새 인스턴스 생성
-- 포트 할당은 Effect로 격리
-- 터널 ID는 UUID로 자동 생성
-- 이벤트 소싱으로 상태 변경 추적
+This approach leverages Pydantic v2's powerful validation, serialization, and type safety features while maintaining comprehensive TDD coverage and simple, intuitive APIs.
