@@ -95,12 +95,19 @@ tests/
 └── test_*.py          # Other test modules
 ```
 
-### Planned Module Structure
+### Next Phase Architecture (Checkpoint 3)
 ```
 src/frp_wrapper/
-├── tunnel.py          # Tunnel management classes (HTTPTunnel, TCPTunnel)
+├── tunnel.py          # Pydantic-based tunnel models (HTTPTunnel, TCPTunnel)
 ├── server.py          # Server management tools
 └── utils.py           # Helper functions
+
+# Key design: Pydantic BaseModel for strong typing and validation
+class HTTPTunnel(BaseModel):
+    local_port: int = Field(ge=1, le=65535)
+    path: str = Field(regex=r'^/[a-zA-Z0-9/_-]*$')
+    domain: str = Field(min_length=1)
+    # Uses FRP's native 'locations' parameter for path routing
 ```
 
 ### Key Design Principles
@@ -134,34 +141,40 @@ src/frp_wrapper/
 
 4. **Test-Driven Development**: All code written with comprehensive test coverage (95%+ required)
 
-## Core Concepts
+## Architecture Patterns
 
-### Main Classes
-- **ProcessManager** (✅ Implemented): Manages FRP binary process lifecycle with health checks
-- **FRPClient** (✅ Implemented): Main client for connecting to FRP server
-- **ConfigBuilder** (✅ Implemented): Generates FRP TOML configuration files
-- **HTTPTunnel** (🚧 Planned): HTTP tunnel with path-based routing
-- **TCPTunnel** (🚧 Planned): Simple TCP port forwarding
+### Core Component Interaction
+The architecture follows a three-layer pattern where each component has clear responsibilities:
 
-### Path-Based Routing Mechanism
-Uses FRP's native `locations` feature for clean URL routing:
-```
-User Request: https://example.com/myapp/api
-    ↓
-FRP Server: Route based on locations ["/myapp"]
-    ↓
-Local Service: Receive request on port 3000
+1. **FRPClient** orchestrates connections and manages overall state
+2. **ConfigBuilder** generates TOML configurations with temporary file management
+3. **ProcessManager** handles FRP binary lifecycle with health monitoring
+
+```python
+# Critical dependency flow - components must be initialized in this order:
+config_builder = ConfigBuilder()
+config_path = config_builder.build()
+process_manager = ProcessManager(binary_path, config_path)
 ```
 
-FRP Configuration:
-```toml
-[[proxies]]
-name = "myapp"
-type = "http"
-localPort = 3000
-customDomains = ["example.com"]
-locations = ["/myapp"]  # Native path routing!
-```
+### Exception Hierarchy Design
+Custom exceptions provide clear error categorization:
+- `BinaryNotFoundError`: FRP binary detection failures
+- `ConnectionError`: Network/server connection issues
+- `AuthenticationError`: FRP server authentication failures
+- `ProcessError`: FRP process management failures
+
+### State Management Pattern
+All classes implement consistent state tracking:
+- **Initialization validation** in `__init__` (fail fast)
+- **Boolean state queries** (`is_connected()`, `is_running()`)
+- **Context manager support** for automatic cleanup
+- **Immutable configuration** once objects are created
+
+### Testing Architecture
+- **Unit tests**: Mock all external dependencies (subprocess, file system)
+- **Integration tests**: Use `@pytest.mark.integration` marker
+- **Mock patterns**: Always mock `is_running()` when testing `is_connected()`
 
 ## Development Workflow - TDD Approach
 
@@ -207,18 +220,18 @@ locations = ["/myapp"]  # Native path routing!
 - YAML/TOML validation
 - Trailing whitespace removal
 
-## Development Status
+## Implementation Status
 
-**Current Phase**: Implementation Phase (Checkpoint 2 of 8 completed)
-- ✅ Project setup complete (uv, pre-commit, structlog)
-- ✅ ProcessManager implemented with full test coverage
-- ✅ FRPClient and ConfigBuilder implemented
-- 🚧 Working towards Checkpoint 3 (Tunnel Management)
+**Current Phase**: Checkpoint 2 Complete (Basic FRP Client)
+- ✅ **ProcessManager**: Binary lifecycle management with health checks
+- ✅ **FRPClient**: Server connection and authentication
+- ✅ **ConfigBuilder**: TOML configuration generation
+- ✅ **Public API**: Exported classes available via `from frp_wrapper import ...`
 
-**Roadmap Overview** (5 weeks total):
-- Phase 1 (Weeks 1-2): Basic implementation
-- Phase 2 (Weeks 3-4): Core features
-- Phase 3 (Week 5): Production ready
+**Next Phase**: Checkpoint 3 (Tunnel Management with Pydantic)
+- 🚧 HTTP/TCP tunnel classes using Pydantic BaseModel
+- 🚧 Path-based routing with FRP's native `locations` feature
+- 🚧 Tunnel lifecycle management and monitoring
 
 ## Common Tasks
 
@@ -285,19 +298,32 @@ def test_client_context_manager(mock_process_manager):
     assert not client.is_connected()
 ```
 
-### Mock Patterns
+### Critical Mock Patterns
 ```python
-# Mock ProcessManager for client tests
+# CRITICAL: Always mock is_running() when testing is_connected()
 @patch('frp_wrapper.client.ProcessManager')
 def test_client_connection(mock_process_manager):
     mock_process = Mock()
     mock_process_manager.return_value = mock_process
     mock_process.start.return_value = True
     mock_process.wait_for_startup.return_value = True
-    mock_process.is_running.return_value = True  # Important for is_connected()
+    mock_process.is_running.return_value = True  # Required for is_connected()
 
     client = FRPClient("example.com")
     assert client.connect()
+    assert client.is_connected()  # Will fail without is_running() mock
+```
+
+### Dependency Chain Testing
+```python
+# Test the full component initialization chain
+def test_full_initialization_chain():
+    config_builder = ConfigBuilder()
+    config_builder.add_server("example.com", token="secret")
+    config_path = config_builder.build()
+
+    process_manager = ProcessManager("/usr/bin/frpc", config_path)
+    assert process_manager.is_running() == False  # Not started yet
 ```
 
 ## Environment-Specific Notes
