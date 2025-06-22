@@ -35,3 +35,9 @@ class AuthenticationError(FRPWrapperError):
     """Raised when authentication with FRP server fails."""
 
     pass
+
+
+class TunnelError(FRPWrapperError):
+    """Raised when tunnel operations fail."""
+
+    pass

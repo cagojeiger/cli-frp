@@ -18,6 +18,8 @@ from ..common.utils import (
     validate_non_empty_string,
     validate_port,
 )
+from ..common.context_config import ContextConfig
+from ..common.context import ContextManagerMixin
 from ..tunnels.models import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
 from .config import ConfigBuilder
 from .process import ProcessManager
@@ -28,7 +30,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class FRPClient:
+class FRPClient(ContextManagerMixin):
     """FRP Client for managing tunnels and server connections."""
 
     def __init__(
@@ -37,6 +39,7 @@ class FRPClient:
         port: int = 7000,
         auth_token: str | None = None,
         binary_path: str | None = None,
+        context_config: ContextConfig | None = None,
     ):
         """Initialize FRP Client.
 
@@ -45,11 +48,14 @@ class FRPClient:
             port: FRP server port (default: 7000)
             auth_token: Authentication token for server
             binary_path: Path to frpc binary (auto-detected if None)
+            context_config: Context manager configuration
 
         Raises:
             ValueError: If server address is invalid or port is out of range
             BinaryNotFoundError: If frpc binary cannot be found
         """
+        super().__init__(context_config=context_config)
+        
         self.server = validate_non_empty_string(server, "Server address")
         validate_port(port, "Server port")
 
