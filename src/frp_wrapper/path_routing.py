@@ -9,7 +9,23 @@ This module implements advanced path routing capabilities including:
 import re
 from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
 from re import Pattern
+
+
+@lru_cache(maxsize=128)
+def _compile_pattern_cached(pattern: str) -> Pattern[str]:
+    """Compile pattern to regex with caching for performance."""
+    escaped = re.escape(pattern)
+    escaped = escaped.replace(r"\*\*", ".*")  # ** matches everything including /
+    escaped = escaped.replace(r"\*", "[^/]*")  # * matches anything except /
+    return re.compile(f"^{escaped}$")
+
+
+@lru_cache(maxsize=256)
+def _normalize_slashes_cached(path: str) -> str:
+    """Normalize multiple slashes with caching for performance."""
+    return re.sub(r"/+", "/", path)
 
 
 class PathConflictType(str, Enum):
@@ -47,10 +63,7 @@ class PathPattern:
 
     def _compile_pattern(self) -> Pattern[str]:
         """Compile pattern to regex for matching"""
-        escaped = re.escape(self.pattern)
-        escaped = escaped.replace(r"\*\*", ".*")  # ** matches everything including /
-        escaped = escaped.replace(r"\*", "[^/]*")  # * matches anything except /
-        return re.compile(f"^{escaped}$")
+        return _compile_pattern_cached(self.pattern)
 
     def matches(self, path: str) -> bool:
         """Check if path matches this pattern"""
@@ -62,9 +75,28 @@ class PathPattern:
             return True
 
         if self.is_wildcard or other.is_wildcard:
-            return self.matches(other.pattern.replace("*", "test")) or other.matches(
-                self.pattern.replace("*", "test")
-            )
+            # Check if patterns can potentially match the same paths
+            return self._patterns_overlap(other)
+
+        return False
+
+    def _patterns_overlap(self, other: "PathPattern") -> bool:
+        """Check if two patterns can potentially match overlapping paths"""
+        # Extract base paths (non-wildcard parts)
+        self_base = self.pattern.split("*")[0].rstrip("/")
+        other_base = other.pattern.split("*")[0].rstrip("/")
+
+        # If one is a prefix of the other, they might conflict
+        if self_base.startswith(other_base) or other_base.startswith(self_base):
+            return True
+
+        # Test with common path segments that could exist
+        test_segments = ["api", "app", "admin", "static", "content", "data"]
+
+        for segment in test_segments:
+            test_path = f"{self_base}/{segment}" if self_base else segment
+            if self.matches(test_path) and other.matches(test_path):
+                return True
 
         return False
 
@@ -172,7 +204,7 @@ class PathValidator:
         if not path:
             return ""
 
-        path = re.sub(r"/+", "/", path)
+        path = _normalize_slashes_cached(path)
 
         return path
 

@@ -36,14 +36,15 @@ class TestFRPClientExposePathIntegration:
         assert tunnel.path == "myapp"
         assert tunnel.tunnel_type == TunnelType.HTTP
 
-        mock_client.tunnel_manager.create_http_tunnel.assert_called_once_with(
-            tunnel_id="http-3000-myapp",
-            local_port=3000,
-            path="myapp",
-            custom_domains=[],
-            strip_path=True,
-            websocket=True,
-        )
+        # Check that create_http_tunnel was called with expected arguments
+        call_args = mock_client.tunnel_manager.create_http_tunnel.call_args
+        assert call_args[1]["local_port"] == 3000
+        assert call_args[1]["path"] == "myapp"
+        assert call_args[1]["custom_domains"] == []
+        assert call_args[1]["strip_path"] is True
+        assert call_args[1]["websocket"] is True
+        # Check tunnel_id starts with expected pattern
+        assert call_args[1]["tunnel_id"].startswith("http-3000-myapp-")
 
     def test_expose_path_with_custom_domains(self, mock_client):
         """Test expose_path with custom domains."""
@@ -60,14 +61,15 @@ class TestFRPClientExposePathIntegration:
         )
 
         assert tunnel.custom_domains == ["api.example.com", "api.test.com"]
-        mock_client.tunnel_manager.create_http_tunnel.assert_called_once_with(
-            tunnel_id="http-8080-api",
-            local_port=8080,
-            path="api",
-            custom_domains=["api.example.com", "api.test.com"],
-            strip_path=True,
-            websocket=True,
-        )
+        # Check that create_http_tunnel was called with expected arguments
+        call_args = mock_client.tunnel_manager.create_http_tunnel.call_args
+        assert call_args[1]["local_port"] == 8080
+        assert call_args[1]["path"] == "api"
+        assert call_args[1]["custom_domains"] == ["api.example.com", "api.test.com"]
+        assert call_args[1]["strip_path"] is True
+        assert call_args[1]["websocket"] is True
+        # Check tunnel_id starts with expected pattern
+        assert call_args[1]["tunnel_id"].startswith("http-8080-api-")
 
     def test_expose_path_with_custom_options(self, mock_client):
         """Test expose_path with custom strip_path and websocket options."""
@@ -86,14 +88,15 @@ class TestFRPClientExposePathIntegration:
 
         assert tunnel.strip_path is False
         assert tunnel.websocket is False
-        mock_client.tunnel_manager.create_http_tunnel.assert_called_once_with(
-            tunnel_id="http-5000-webapp",
-            local_port=5000,
-            path="webapp",
-            custom_domains=[],
-            strip_path=False,
-            websocket=False,
-        )
+        # Check that create_http_tunnel was called with expected arguments
+        call_args = mock_client.tunnel_manager.create_http_tunnel.call_args
+        assert call_args[1]["local_port"] == 5000
+        assert call_args[1]["path"] == "webapp"
+        assert call_args[1]["custom_domains"] == []
+        assert call_args[1]["strip_path"] is False
+        assert call_args[1]["websocket"] is False
+        # Check tunnel_id starts with expected pattern
+        assert call_args[1]["tunnel_id"].startswith("http-5000-webapp-")
 
     def test_expose_path_generates_unique_tunnel_id(self, mock_client):
         """Test that expose_path generates unique tunnel IDs."""
@@ -111,10 +114,10 @@ class TestFRPClientExposePathIntegration:
 
     def test_expose_path_validates_port_range(self, mock_client):
         """Test that expose_path validates port range."""
-        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        with pytest.raises(ValueError, match="Local port must be between 1 and 65535"):
             mock_client.expose_path(0, "invalid-port")
 
-        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        with pytest.raises(ValueError, match="Local port must be between 1 and 65535"):
             mock_client.expose_path(65536, "invalid-port")
 
     def test_expose_path_validates_path_format(self, mock_client):
@@ -146,9 +149,11 @@ class TestFRPClientExposePathIntegration:
         mock_client.expose_path(3000, "autostart", auto_start=True)
 
         mock_client.tunnel_manager.create_http_tunnel.assert_called_once()
-        mock_client.tunnel_manager.start_tunnel.assert_called_once_with(
-            "http-3000-autostart"
-        )
+        # Check that start_tunnel was called with the generated tunnel_id
+        call_args = mock_client.tunnel_manager.create_http_tunnel.call_args
+        tunnel_id = call_args[1]["tunnel_id"]
+        assert tunnel_id.startswith("http-3000-autostart-")
+        mock_client.tunnel_manager.start_tunnel.assert_called_once_with(tunnel_id)
 
     def test_expose_path_skips_auto_start_if_not_connected(self, mock_client):
         """Test that expose_path skips auto-start if client not connected."""
@@ -234,9 +239,12 @@ class TestFRPClientExposeTCPIntegration:
         tunnel = mock_client.expose_tcp(3000, remote_port=8080)
 
         assert tunnel.remote_port == 8080
-        mock_client.tunnel_manager.create_tcp_tunnel.assert_called_once_with(
-            tunnel_id="tcp-3000-8080", local_port=3000, remote_port=8080
-        )
+        # Check that create_tcp_tunnel was called with expected arguments
+        call_args = mock_client.tunnel_manager.create_tcp_tunnel.call_args
+        assert call_args[1]["local_port"] == 3000
+        assert call_args[1]["remote_port"] == 8080
+        # Check tunnel_id starts with expected pattern
+        assert call_args[1]["tunnel_id"].startswith("tcp-3000-8080-")
 
     def test_expose_tcp_generates_unique_tunnel_id(self, mock_client):
         """Test that expose_tcp generates unique tunnel IDs."""
@@ -260,16 +268,19 @@ class TestFRPClientExposeTCPIntegration:
         result = mock_client.expose_tcp(3000, remote_port=9000)
 
         assert result.id == "tcp-3000-9000"
-        mock_client.tunnel_manager.create_tcp_tunnel.assert_called_once_with(
-            tunnel_id="tcp-3000-9000", local_port=3000, remote_port=9000
-        )
+        # Check that create_tcp_tunnel was called with expected arguments
+        call_args = mock_client.tunnel_manager.create_tcp_tunnel.call_args
+        assert call_args[1]["local_port"] == 3000
+        assert call_args[1]["remote_port"] == 9000
+        # Check tunnel_id starts with expected pattern
+        assert call_args[1]["tunnel_id"].startswith("tcp-3000-9000-")
 
     def test_expose_tcp_validates_port_range(self, mock_client):
         """Test that expose_tcp validates port range."""
-        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        with pytest.raises(ValueError, match="Local port must be between 1 and 65535"):
             mock_client.expose_tcp(0)
 
-        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        with pytest.raises(ValueError, match="Local port must be between 1 and 65535"):
             mock_client.expose_tcp(65536)
 
         with pytest.raises(ValueError, match="Remote port must be between 1 and 65535"):

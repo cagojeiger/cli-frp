@@ -12,6 +12,7 @@ from .tunnel import (
     TunnelType,
 )
 from .tunnel_manager import TunnelManager
+from .utils import validate_non_empty_string, validate_port
 
 # Setup logging on package initialization
 setup_logging(level="INFO")
@@ -36,4 +37,6 @@ __all__ = [
     # Utilities
     "get_logger",
     "setup_logging",
+    "validate_port",
+    "validate_non_empty_string",
 ]

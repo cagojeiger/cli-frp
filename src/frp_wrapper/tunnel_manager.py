@@ -229,8 +229,9 @@ class TunnelManager:
         frp_binary = shutil.which("frpc")
         if frp_binary is None:
             raise RuntimeError(
-                "FRP client binary 'frpc' not found in PATH. "
-                "Please install FRP and ensure 'frpc' is available in your PATH."
+                "FRP client binary 'frpc' not found in system PATH. "
+                "Please install FRP from https://github.com/fatedier/frp/releases "
+                "and ensure 'frpc' is available in your PATH."
             )
         return frp_binary
 
@@ -261,7 +262,9 @@ class TunnelManager:
         """
         normalized_path = PathValidator.normalize_path(path)
         if not PathValidator.validate_path(normalized_path):
-            raise TunnelManagerError(f"Invalid path format: '{path}'")
+            raise TunnelManagerError(
+                f"Invalid path format '{path}': Path must contain only valid characters"
+            )
 
         # Check for path conflicts with existing tunnels
         conflicts = self._path_detector.detect_conflicts(normalized_path)

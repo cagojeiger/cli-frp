@@ -1,5 +1,6 @@
 """Tunnel models and management using Pydantic for type safety and validation."""
 
+import re
 from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
@@ -165,10 +166,21 @@ class HTTPTunnel(BaseTunnel):
                 "Path should not start with '/' - it will be added automatically"
             )
 
-        if not v.replace("-", "").replace("_", "").replace("/", "").isalnum():
+        # Allow alphanumeric characters, hyphens, underscores, slashes, dots, and wildcards
+        if not re.match(r"^[a-zA-Z0-9/_\-.*]+$", v):
             raise ValueError(
-                "Path must contain only alphanumeric characters, hyphens, underscores, and slashes"
+                "Path must contain only alphanumeric characters, hyphens, underscores, slashes, dots, and wildcards (*)"
             )
+
+        # Check for invalid patterns
+        if ".." in v:
+            raise ValueError("Path cannot contain '..' (directory traversal)")
+
+        if v.endswith("/"):
+            raise ValueError("Path cannot end with '/'")
+
+        if "//" in v:
+            raise ValueError("Path cannot contain consecutive slashes")
 
         return v
 

@@ -2,7 +2,7 @@
 
 import os
 import shutil
-import time
+import uuid
 from types import TracebackType
 from typing import Any, Literal
 
@@ -17,6 +17,7 @@ from .logging import get_logger
 from .process import ProcessManager
 from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
 from .tunnel_manager import TunnelManager
+from .utils import validate_non_empty_string, validate_port
 
 logger = get_logger(__name__)
 
@@ -43,13 +44,9 @@ class FRPClient:
             ValueError: If server address is invalid or port is out of range
             BinaryNotFoundError: If frpc binary cannot be found
         """
-        if not server or not server.strip():
-            raise ValueError("Server address cannot be empty")
+        self.server = validate_non_empty_string(server, "Server address")
+        validate_port(port, "Server port")
 
-        if not (1 <= port <= 65535):
-            raise ValueError("Port must be between 1 and 65535")
-
-        self.server = server.strip()
         self.port = port
         self.auth_token = auth_token
 
@@ -251,18 +248,16 @@ class FRPClient:
             ValueError: If port or path is invalid
             TunnelManagerError: If tunnel creation fails
         """
-        if not (1 <= local_port <= 65535):
-            raise ValueError("Port must be between 1 and 65535")
+        validate_port(local_port, "Local port")
 
-        if not path or not path.strip():
-            raise ValueError("Path cannot be empty")
+        path = validate_non_empty_string(path, "Path")
 
         if path.startswith("/"):
             raise ValueError(
                 "Path should not start with '/' - it will be added automatically"
             )
 
-        tunnel_id = f"http-{local_port}-{path}"
+        tunnel_id = f"http-{local_port}-{path}-{uuid.uuid4().hex[:8]}"
 
         tunnel = self.tunnel_manager.create_http_tunnel(
             tunnel_id=tunnel_id,
@@ -296,16 +291,15 @@ class FRPClient:
             ValueError: If port is invalid
             TunnelManagerError: If tunnel creation fails
         """
-        if not (1 <= local_port <= 65535):
-            raise ValueError("Port must be between 1 and 65535")
-
-        if remote_port is not None and not (1 <= remote_port <= 65535):
-            raise ValueError("Remote port must be between 1 and 65535")
+        validate_port(local_port, "Local port")
 
         if remote_port is not None:
-            tunnel_id = f"tcp-{local_port}-{remote_port}"
+            validate_port(remote_port, "Remote port")
+
+        if remote_port is not None:
+            tunnel_id = f"tcp-{local_port}-{remote_port}-{uuid.uuid4().hex[:8]}"
         else:
-            tunnel_id = f"tcp-{local_port}-{int(time.time() * 1000) % 10000}"
+            tunnel_id = f"tcp-{local_port}-auto-{uuid.uuid4().hex[:8]}"
 
         tunnel = self.tunnel_manager.create_tcp_tunnel(
             tunnel_id=tunnel_id, local_port=local_port, remote_port=remote_port

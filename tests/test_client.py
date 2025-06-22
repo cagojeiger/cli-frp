@@ -22,10 +22,10 @@ class TestFRPClient:
 
     def test_client_validates_port(self):
         """FRPClient should validate port number"""
-        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        with pytest.raises(ValueError, match="Server port must be between 1 and 65535"):
             FRPClient("example.com", port=0)
 
-        with pytest.raises(ValueError, match="Port must be between 1 and 65535"):
+        with pytest.raises(ValueError, match="Server port must be between 1 and 65535"):
             FRPClient("example.com", port=65536)
 
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")

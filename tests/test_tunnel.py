@@ -552,15 +552,22 @@ class TestHTTPTunnel:
         HTTPTunnel(id="test", local_port=3000, path="api/v1")
         HTTPTunnel(id="test", local_port=3000, path="my-app_v2")
         HTTPTunnel(id="test", local_port=3000, path="app123/test")
+        HTTPTunnel(id="test", local_port=3000, path="my.app")  # Dot is now allowed
+        HTTPTunnel(id="test", local_port=3000, path="api/*")  # Wildcard is now allowed
 
         with pytest.raises(ValidationError):
             HTTPTunnel(id="test", local_port=3000, path="my app")  # Space
 
         with pytest.raises(ValidationError):
-            HTTPTunnel(id="test", local_port=3000, path="my.app")  # Dot
+            HTTPTunnel(id="test", local_port=3000, path="my#app")  # Hash
 
         with pytest.raises(ValidationError):
-            HTTPTunnel(id="test", local_port=3000, path="my#app")  # Hash
+            HTTPTunnel(
+                id="test", local_port=3000, path="api/../admin"
+            )  # Directory traversal
+
+        with pytest.raises(ValidationError):
+            HTTPTunnel(id="test", local_port=3000, path="api/")  # Trailing slash
 
     def test_http_tunnel_multiple_custom_domains(self):
         """Test HTTP tunnel with multiple custom domains"""
