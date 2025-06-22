@@ -1,0 +1,56 @@
+# FRP Server Configuration Template
+# Copy this file to /etc/frp/frps.toml and customize as needed
+
+# Server Settings
+bindAddr = "0.0.0.0"
+bindPort = 7000
+
+# Virtual Host Ports
+vhostHTTPPort = 80
+vhostHTTPSPort = 443
+
+# Optional: KCP Protocol Support
+# kcpBindPort = 7001
+
+# Authentication
+auth.token = "YOUR_SECURE_TOKEN_HERE"
+
+# Optional: OIDC Authentication
+# auth.method = "oidc"
+# auth.oidc.issuer = "https://your-oidc-provider.com"
+# auth.oidc.audience = "frp"
+
+# Subdomain Configuration
+# subDomainHost = "example.com"
+
+# Custom 404 Page
+# custom404Page = "/path/to/custom/404.html"
+
+# Logging Configuration
+log.level = "info"
+log.maxDays = 7
+log.to = "/var/log/frp/frps.log"
+
+# Performance Settings
+maxPoolCount = 10
+maxPortsPerClient = 0  # 0 = unlimited
+transport.heartbeatTimeout = 90
+
+# SSL/TLS Configuration (uncomment to enable)
+# tlsCertFile = "/etc/letsencrypt/live/your-domain.com/fullchain.pem"
+# tlsKeyFile = "/etc/letsencrypt/live/your-domain.com/privkey.pem"
+
+# Dashboard Configuration (uncomment to enable)
+# [webServer]
+# port = 7500
+# user = "admin"
+# password = "YOUR_SECURE_PASSWORD_HERE"
+# assetsDir = "/opt/frp/web"
+
+# Advanced Settings
+# transport.tcpMux = true
+# transport.tcpMuxKeepaliveInterval = 60
+# transport.tcpKeepalive = 7200
+
+# Security Settings
+# allowPorts = "2000-3000,3001,3003,4000-50000"
