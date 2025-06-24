@@ -1,9 +1,12 @@
-# Checkpoint 8: Examples & Documentation with Pydantic (TDD Approach)
+# Checkpoint 8: Comprehensive Examples & Documentation (TDD Approach)
 
 ## Overview
-TDD와 Pydantic v2를 활용한 완전한 예제 코드와 문서를 작성합니다. 실용적인 사용 사례와 프로덕션 품질의 문서를 제공하여 사용자가 쉽게 시작할 수 있도록 합니다.
+TDD와 Pydantic v2를 활용한 **클라이언트 + 서버 통합 예제** 코드와 완전한 문서를 작성합니다. 실용적인 사용 사례와 프로덕션 품질의 문서를 제공하여 사용자가 쉽게 시작할 수 있도록 합니다.
 
 ## Goals
+- **클라이언트 예제**: 터널 생성, 관리, 모니터링
+- **서버 예제**: FRP 서버 설정, 실행, 관리
+- **통합 예제**: 클라이언트+서버 함께 동작하는 시나리오
 - Pydantic 기반 설정 모델을 활용한 실용적 예제
 - 완전한 API 문서 및 사용자 가이드
 - TDD 방식으로 검증된 예제 코드
@@ -138,6 +141,101 @@ class ExampleConfig(BaseModel):
         """Get all TCP tunnel configurations"""
         return [t for t in self.tunnels if t.type == TunnelType.TCP]
 
+class ServerExampleConfig(BaseModel):
+    """Pydantic model for FRP server example configuration"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # Environment settings
+    environment: ExampleEnvironment = Field(default=ExampleEnvironment.DEVELOPMENT)
+    server_name: str = Field(..., min_length=1, description="Server name")
+    description: Optional[str] = Field(None, description="Server description")
+
+    # Basic server settings
+    bind_addr: str = Field(default="0.0.0.0", description="Server bind address")
+    bind_port: int = Field(default=7000, ge=1, le=65535, description="Control port")
+    auth_token: Optional[str] = Field(None, min_length=8, description="Authentication token")
+
+    # Virtual host settings
+    vhost_http_port: int = Field(default=80, ge=1, le=65535, description="HTTP virtual host port")
+    vhost_https_port: int = Field(default=443, ge=1, le=65535, description="HTTPS virtual host port")
+    subdomain_host: Optional[str] = Field(None, description="Subdomain host for tunnels")
+
+    # Dashboard settings
+    enable_dashboard: bool = Field(default=True, description="Enable web dashboard")
+    dashboard_port: int = Field(default=7500, ge=1, le=65535, description="Dashboard port")
+    dashboard_user: str = Field(default="admin", description="Dashboard username")
+    dashboard_password: str = Field(default="admin123", min_length=6, description="Dashboard password")
+
+    # Logging settings
+    log_level: str = Field(default="INFO", pattern="^(TRACE|DEBUG|INFO|WARN|ERROR)$")
+    log_file: Optional[str] = Field(None, description="Log file path")
+    log_max_days: int = Field(default=7, ge=1, le=365, description="Log retention days")
+
+    # Performance settings
+    max_pool_count: int = Field(default=5, ge=1, le=100, description="Maximum pool count")
+    max_ports_per_client: int = Field(default=0, ge=0, description="Max ports per client (0=unlimited)")
+    heartbeat_timeout: int = Field(default=90, ge=30, le=300, description="Heartbeat timeout seconds")
+
+    # Monitoring settings
+    enable_monitoring: bool = Field(default=True, description="Enable server monitoring")
+    monitoring_port: int = Field(default=9998, ge=1, le=65535, description="Monitoring port")
+
+    @field_validator('dashboard_password')
+    @classmethod
+    def validate_dashboard_password(cls, v: str) -> str:
+        """Validate dashboard password strength"""
+        if len(v) < 6:
+            raise ValueError("Dashboard password must be at least 6 characters")
+        return v
+
+    @field_validator('subdomain_host')
+    @classmethod
+    def validate_subdomain_host(cls, v: Optional[str]) -> Optional[str]:
+        """Validate subdomain host format"""
+        if v is not None:
+            if not v or '.' not in v:
+                raise ValueError("Subdomain host must be a valid domain")
+        return v
+
+class IntegratedExampleConfig(BaseModel):
+    """Pydantic model for integrated client+server example configuration"""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    # Project settings
+    project_name: str = Field(..., min_length=1, description="Project name")
+    description: Optional[str] = Field(None, description="Project description")
+    environment: ExampleEnvironment = Field(default=ExampleEnvironment.DEVELOPMENT)
+
+    # Server configuration
+    server: ServerExampleConfig = Field(..., description="Server configuration")
+
+    # Client configuration
+    client: ExampleConfig = Field(..., description="Client configuration")
+
+    # Integration settings
+    auto_start_server: bool = Field(default=True, description="Automatically start server")
+    auto_connect_client: bool = Field(default=True, description="Automatically connect client")
+    integration_timeout: int = Field(default=30, ge=5, le=300, description="Integration timeout seconds")
+
+    # Monitoring settings
+    unified_monitoring: bool = Field(default=True, description="Enable unified client+server monitoring")
+    unified_dashboard_port: int = Field(default=9999, ge=1, le=65535, description="Unified dashboard port")
+
+    @field_validator('client')
+    @classmethod
+    def validate_client_server_consistency(cls, v: ExampleConfig, info) -> ExampleConfig:
+        """Ensure client points to the correct server"""
+        if hasattr(info.data, 'server') and info.data['server']:
+            server_config = info.data['server']
+            if v.server_host != "localhost" and v.server_host != server_config.bind_addr:
+                # Only warn, don't fail - user might have specific network setup
+                pass
+            if v.server_port != server_config.bind_port:
+                raise ValueError("Client server_port must match server bind_port")
+        return v
+
 class ExampleMetadata(BaseModel):
     """Metadata for example files"""
 
@@ -199,8 +297,8 @@ from typing import List, Dict, Any
 from unittest.mock import Mock, patch
 
 from examples.config.models import (
-    ExampleConfig, ExampleTunnelConfig, ExampleMetadata, TunnelType,
-    ExampleEnvironment, DocumentationConfig
+    ExampleConfig, ExampleTunnelConfig, ServerExampleConfig, IntegratedExampleConfig,
+    ExampleMetadata, TunnelType, ExampleEnvironment, DocumentationConfig
 )
 from frp_wrapper.client import FRPClient
 
@@ -349,6 +447,162 @@ class TestExampleConfig:
         tcp_tunnels = config.get_tcp_tunnels()
         assert len(tcp_tunnels) == 1
         assert tcp_tunnels[0].name == "ssh"
+
+class TestServerExampleConfig:
+    def test_server_example_config_creation(self):
+        """Test ServerExampleConfig creation"""
+        server_config = ServerExampleConfig(
+            server_name="test-server",
+            bind_port=7000,
+            auth_token="secure_token_123",
+            subdomain_host="tunnel.example.com",
+            enable_dashboard=True,
+            dashboard_password="admin123456"
+        )
+
+        assert server_config.server_name == "test-server"
+        assert server_config.bind_port == 7000
+        assert server_config.auth_token == "secure_token_123"
+        assert server_config.subdomain_host == "tunnel.example.com"
+        assert server_config.enable_dashboard is True
+
+    def test_server_example_config_validation_errors(self):
+        """Test ServerExampleConfig validation errors"""
+        # Invalid dashboard password (too short)
+        with pytest.raises(ValueError, match="at least 6 characters"):
+            ServerExampleConfig(
+                server_name="test",
+                dashboard_password="short"
+            )
+
+        # Invalid subdomain host
+        with pytest.raises(ValueError, match="valid domain"):
+            ServerExampleConfig(
+                server_name="test",
+                subdomain_host="invalid"
+            )
+
+        # Invalid port
+        with pytest.raises(ValueError, match="greater than or equal to 1"):
+            ServerExampleConfig(
+                server_name="test",
+                bind_port=0
+            )
+
+    def test_server_example_config_defaults(self):
+        """Test ServerExampleConfig default values"""
+        server_config = ServerExampleConfig(server_name="test-server")
+
+        assert server_config.environment == ExampleEnvironment.DEVELOPMENT
+        assert server_config.bind_addr == "0.0.0.0"
+        assert server_config.bind_port == 7000
+        assert server_config.vhost_http_port == 80
+        assert server_config.vhost_https_port == 443
+        assert server_config.enable_dashboard is True
+        assert server_config.dashboard_port == 7500
+        assert server_config.log_level == "INFO"
+
+class TestIntegratedExampleConfig:
+    def test_integrated_example_config_creation(self):
+        """Test IntegratedExampleConfig creation"""
+        server_config = ServerExampleConfig(
+            server_name="integrated-server",
+            bind_port=7001,
+            auth_token="shared_token_123"
+        )
+
+        client_config = ExampleConfig(
+            project_name="integrated-client",
+            server_host="localhost",
+            server_port=7001,
+            auth_token="shared_token_123",
+            tunnels=[
+                ExampleTunnelConfig(
+                    name="web",
+                    type=TunnelType.HTTP,
+                    local_port=3000,
+                    path="app"
+                )
+            ]
+        )
+
+        integrated_config = IntegratedExampleConfig(
+            project_name="integrated-example",
+            server=server_config,
+            client=client_config,
+            auto_start_server=True,
+            unified_monitoring=True
+        )
+
+        assert integrated_config.project_name == "integrated-example"
+        assert integrated_config.server.server_name == "integrated-server"
+        assert integrated_config.client.project_name == "integrated-client"
+        assert integrated_config.auto_start_server is True
+        assert integrated_config.unified_monitoring is True
+
+    def test_integrated_example_config_validation_errors(self):
+        """Test IntegratedExampleConfig validation errors"""
+        server_config = ServerExampleConfig(
+            server_name="test-server",
+            bind_port=7000
+        )
+
+        # Client with mismatched server port
+        client_config = ExampleConfig(
+            project_name="test-client",
+            server_host="localhost",
+            server_port=7001,  # Different from server bind_port
+            tunnels=[
+                ExampleTunnelConfig(
+                    name="web",
+                    type=TunnelType.HTTP,
+                    local_port=3000
+                )
+            ]
+        )
+
+        with pytest.raises(ValueError, match="server_port must match server bind_port"):
+            IntegratedExampleConfig(
+                project_name="test-integrated",
+                server=server_config,
+                client=client_config
+            )
+
+    def test_integrated_example_config_consistency(self):
+        """Test server-client configuration consistency"""
+        auth_token = "consistent_token_123"
+        bind_port = 7002
+
+        server_config = ServerExampleConfig(
+            server_name="consistent-server",
+            bind_port=bind_port,
+            auth_token=auth_token
+        )
+
+        client_config = ExampleConfig(
+            project_name="consistent-client",
+            server_host="localhost",
+            server_port=bind_port,
+            auth_token=auth_token,
+            tunnels=[
+                ExampleTunnelConfig(
+                    name="api",
+                    type=TunnelType.HTTP,
+                    local_port=8000,
+                    path="api"
+                )
+            ]
+        )
+
+        integrated_config = IntegratedExampleConfig(
+            project_name="consistent-example",
+            server=server_config,
+            client=client_config
+        )
+
+        # Verify configurations are consistent
+        assert integrated_config.server.bind_port == integrated_config.client.server_port
+        assert integrated_config.server.auth_token == integrated_config.client.auth_token
 
 class TestExampleMetadata:
     def test_example_metadata_creation(self):
@@ -1054,23 +1308,26 @@ if __name__ == "__main__":
 
 ## Implementation Timeline (TDD + Pydantic)
 
-### Day 1: Configuration Models & Test Framework
-1. **Write configuration model tests**: ExampleConfig, TunnelConfig validation
-2. **Implement Pydantic models**: Complete configuration system with validation
-3. **Write example execution tests**: Test framework for validating examples
-4. **Create test configurations**: Development, staging, production configs
+### Day 1: Comprehensive Configuration Models & Test Framework
+1. **Write client configuration tests**: ExampleConfig, TunnelConfig validation
+2. **Write server configuration tests**: ServerExampleConfig validation and defaults
+3. **Write integrated configuration tests**: IntegratedExampleConfig consistency validation
+4. **Implement Pydantic models**: Complete client+server configuration system
+5. **Create test configurations**: Development, staging, production configs for all scenarios
 
-### Day 2: Production Examples & Documentation
-1. **Write production example tests**: Complex multi-service scenarios
-2. **Implement production examples**: Real-world use cases with monitoring
-3. **Write documentation generation tests**: API docs, tutorials, guides
-4. **Create comprehensive documentation**: User guides, API reference
+### Day 2: Multi-Tier Examples & Documentation
+1. **Write client example tests**: Simple tunnel scenarios
+2. **Write server example tests**: Server setup and management scenarios
+3. **Write integrated example tests**: End-to-end client+server scenarios
+4. **Implement production examples**: Real-world use cases with unified monitoring
+5. **Create comprehensive documentation**: Separate guides for client, server, and integrated usage
 
-### Day 3: Integration & Packaging
-1. **Write integration tests**: End-to-end example validation
-2. **Create deployment examples**: Docker, CI/CD, production deployment
-3. **Package documentation**: Generate final docs and validate links
-4. **Final testing**: All examples, documentation, and package deployment
+### Day 3: Integration & Complete Ecosystem
+1. **Write unified integration tests**: Complete ecosystem validation
+2. **Create deployment examples**: Docker, CI/CD, production deployment for entire stack
+3. **Write documentation generation tests**: Unified API docs, tutorials, guides
+4. **Package documentation**: Generate final docs covering complete FRP ecosystem
+5. **Final testing**: All client, server, integrated examples and complete package deployment
 
 ## File Structure
 ```
@@ -1078,21 +1335,56 @@ examples/
 ├── __init__.py
 ├── config/
 │   ├── __init__.py
-│   ├── models.py                    # Pydantic configuration models
-│   ├── development.json             # Development configuration
-│   ├── staging.json                 # Staging configuration
-│   └── production.json              # Production configuration
-├── basic/
-│   ├── 01_simple_http_tunnel.py     # Basic HTTP tunnel
-│   ├── 02_tcp_tunnel.py             # Basic TCP tunnel
-│   └── 03_context_manager.py        # Context manager usage
-├── intermediate/
-│   ├── 04_multiple_services.py      # Multi-service setup
-│   ├── 05_webhook_receiver.py       # Webhook handling
-│   └── 06_api_gateway.py            # API gateway pattern
-├── advanced/
-│   ├── 07_monitoring_integration.py # Monitoring and metrics
-│   ├── 08_production_deployment.py  # Production-ready setup
+│   ├── models.py                    # Pydantic configuration models (client+server+integrated)
+│   ├── client/
+│   │   ├── development.json         # Client development configuration
+│   │   ├── staging.json             # Client staging configuration
+│   │   └── production.json          # Client production configuration
+│   ├── server/
+│   │   ├── development.json         # Server development configuration
+│   │   ├── staging.json             # Server staging configuration
+│   │   └── production.json          # Server production configuration
+│   └── integrated/
+│       ├── development.json         # Integrated development configuration
+│       ├── staging.json             # Integrated staging configuration
+│       └── production.json          # Integrated production configuration
+├── client/
+│   ├── basic/
+│   │   ├── 01_simple_http_tunnel.py     # Basic HTTP tunnel
+│   │   ├── 02_tcp_tunnel.py             # Basic TCP tunnel
+│   │   └── 03_context_manager.py        # Context manager usage
+│   ├── intermediate/
+│   │   ├── 04_multiple_services.py      # Multi-service client setup
+│   │   ├── 05_webhook_receiver.py       # Webhook handling
+│   │   └── 06_api_gateway.py            # API gateway pattern
+│   └── advanced/
+│       ├── 07_monitoring_integration.py # Client monitoring and metrics
+│       └── 08_production_deployment.py  # Production-ready client setup
+├── server/
+│   ├── basic/
+│   │   ├── 01_simple_server_setup.py    # Basic server setup
+│   │   ├── 02_dashboard_enabled.py      # Server with dashboard
+│   │   └── 03_context_manager.py        # Server context manager usage
+│   ├── intermediate/
+│   │   ├── 04_custom_domains.py         # Custom domain setup
+│   │   ├── 05_ssl_configuration.py      # SSL/TLS configuration
+│   │   └── 06_performance_tuning.py     # Performance optimization
+│   └── advanced/
+│       ├── 07_monitoring_integration.py # Server monitoring and metrics
+│       └── 08_production_deployment.py  # Production-ready server setup
+├── integrated/
+│   ├── basic/
+│   │   ├── 01_local_development.py      # Local dev environment setup
+│   │   ├── 02_simple_web_app.py         # Simple web app tunneling
+│   │   └── 03_api_and_frontend.py       # API + frontend setup
+│   ├── intermediate/
+│   │   ├── 04_microservices.py          # Microservices architecture
+│   │   ├── 05_database_tunneling.py     # Database access tunneling
+│   │   └── 06_load_balancing.py         # Load balancing setup
+│   └── advanced/
+│       ├── 07_unified_monitoring.py     # Complete monitoring solution
+│       ├── 08_production_cluster.py     # Production cluster setup
+│       └── 09_ci_cd_integration.py      # CI/CD pipeline integration
 │   └── 09_custom_middleware.py      # Custom middleware
 └── production_ready_example.py      # Complete production example
 

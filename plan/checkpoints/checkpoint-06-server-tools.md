@@ -1,27 +1,39 @@
-# Checkpoint 6: Server Tools with Pydantic (TDD Approach)
+# Checkpoint 6: FRP Server Wrapper (TDD Approach)
 
 ## Overview
-TDD와 Pydantic v2를 활용하여 FRP 서버 설정, 배포, 관리를 자동화하는 도구를 구현합니다. Pydantic 기반 설정 검증과 완전한 테스트 커버리지를 제공합니다.
+frps(FRP 서버) 바이너리를 frpc와 동일한 패턴으로 래핑합니다. 기존 ProcessManager와 ConfigBuilder 패턴을 재사용하여 일관성 있는 아키텍처를 구현합니다.
 
 ## Goals
-- Pydantic 기반 FRP 서버 설정 모델
-- SSL/TLS 인증서 자동 관리
-- 서버 배포 및 프로세스 관리
+- frps 바이너리 래핑 (frpc와 동일한 패턴)
+- Pydantic 기반 서버 설정 모델
+- Context manager를 통한 자동 서버 관리
 - TDD 방식의 완전한 테스트 커버리지
-- Production-ready 배포 스크립트
+- 기존 아키텍처와 100% 일관성
 
-## Test-First Implementation with Pydantic
+## Core Insight: frps와 frpc의 실행 패턴 동일
+
+공식 문서 분석 결과:
+```bash
+# frpc (클라이언트) 실행
+./frpc -c ./frpc.toml
+
+# frps (서버) 실행
+./frps -c ./frps.toml
+```
+
+→ **현재 ProcessManager 완전 재사용 가능!**
+
+## Test-First Implementation
 
 ### 1. Server Configuration Models
 
 ```python
 # src/frp_wrapper/server/config.py
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Union
-from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
-from pydantic import DirectoryPath, FilePath, IPvAnyAddress
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 class LogLevel(str, Enum):
     """FRP server log levels"""
@@ -186,775 +198,338 @@ class DashboardConfig(BaseModel):
 
         return '\n'.join(lines)
 
-class SSLConfig(BaseModel):
-    """Pydantic model for SSL/TLS configuration"""
+class ServerConfigBuilder:
+    """ConfigBuilder 패턴을 따르는 FRP 서버 설정 빌더"""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
+    def __init__(self) -> None:
+        """Initialize ServerConfigBuilder with empty state."""
+        self._server_config = ServerConfig()
+        self._dashboard_config = DashboardConfig()
+        self._config_path: Optional[str] = None
 
-    enabled: bool = Field(default=False, description="Enable SSL/TLS")
-    cert_file: Optional[str] = Field(None, description="SSL certificate file path")
-    key_file: Optional[str] = Field(None, description="SSL private key file path")
-    trusted_ca_file: Optional[str] = Field(None, description="Trusted CA file path")
-
-    # Let's Encrypt settings
-    use_letsencrypt: bool = Field(default=False, description="Use Let's Encrypt certificates")
-    letsencrypt_email: Optional[str] = Field(None, description="Let's Encrypt email")
-    letsencrypt_domains: List[str] = Field(default_factory=list, description="Domains for Let's Encrypt")
-
-    @field_validator('letsencrypt_email')
-    @classmethod
-    def validate_email(cls, v: Optional[str]) -> Optional[str]:
-        """Basic email validation"""
-        if v is not None:
-            if '@' not in v or '.' not in v.split('@')[-1]:
-                raise ValueError("Invalid email format")
-        return v
-
-    @model_validator(mode='after')
-    def validate_ssl_files(self) -> 'SSLConfig':
-        """Validate SSL configuration consistency"""
-        if self.enabled and not self.use_letsencrypt:
-            if not self.cert_file or not self.key_file:
-                raise ValueError("SSL cert_file and key_file are required when SSL is enabled")
-
-        if self.use_letsencrypt:
-            if not self.letsencrypt_email:
-                raise ValueError("Let's Encrypt email is required")
-            if not self.letsencrypt_domains:
-                raise ValueError("At least one domain is required for Let's Encrypt")
-
+    def configure_basic(
+        self,
+        bind_port: int = 7000,
+        bind_addr: str = "0.0.0.0",
+        auth_token: Optional[str] = None
+    ) -> "ServerConfigBuilder":
+        """Configure basic server settings"""
+        self._server_config = self._server_config.model_copy(update={
+            'bind_port': bind_port,
+            'bind_addr': bind_addr,
+            'auth_token': auth_token
+        })
         return self
 
-class CompleteServerConfig(BaseModel):
-    """Complete FRP server configuration with all components"""
+    def configure_vhost(
+        self,
+        http_port: int = 80,
+        https_port: int = 443,
+        subdomain_host: Optional[str] = None
+    ) -> "ServerConfigBuilder":
+        """Configure virtual host settings"""
+        self._server_config = self._server_config.model_copy(update={
+            'vhost_http_port': http_port,
+            'vhost_https_port': https_port,
+            'subdomain_host': subdomain_host
+        })
+        return self
 
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    server: ServerConfig = Field(default_factory=ServerConfig)
-    dashboard: DashboardConfig = Field(default_factory=DashboardConfig)
-    ssl: SSLConfig = Field(default_factory=SSLConfig)
-
-    # Metadata
-    config_version: str = Field(default="1.0.0", description="Configuration version")
-    created_at: datetime = Field(default_factory=datetime.now)
-    description: Optional[str] = Field(None, description="Configuration description")
-
-    def generate_toml(self) -> str:
-        """Generate complete TOML configuration file"""
-        toml_content = []
-
-        # Add header comment
-        toml_content.append(f"# FRP Server Configuration")
-        toml_content.append(f"# Generated at: {self.created_at.isoformat()}")
-        toml_content.append(f"# Version: {self.config_version}")
-        if self.description:
-            toml_content.append(f"# Description: {self.description}")
-        toml_content.append("")
-
-        # Main server configuration
-        toml_content.append(self.server.to_toml())
-
-        # Dashboard configuration
-        dashboard_section = self.dashboard.to_toml_section()
-        if dashboard_section:
-            toml_content.append(dashboard_section)
-
-        return '\n'.join(toml_content)
-
-    def save_to_file(self, file_path: Union[str, Path]) -> None:
-        """Save configuration to file"""
-        path = Path(file_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(path, 'w') as f:
-            f.write(self.generate_toml())
-
-    @classmethod
-    def load_from_file(cls, file_path: Union[str, Path]) -> 'CompleteServerConfig':
-        """Load configuration from file"""
-        # This would parse TOML and create the config
-        # Implementation would use tomllib/tomli for parsing
-        raise NotImplementedError("TOML parsing not implemented in this example")
-```
-
-### 2. Enhanced Server Configuration Tests
-
-```python
-# tests/test_server_config.py
-import pytest
-import tempfile
-from pathlib import Path
-from pydantic import ValidationError
-
-from frp_wrapper.server.config import (
-    ServerConfig, DashboardConfig, SSLConfig, CompleteServerConfig,
-    LogLevel, AuthMethod
-)
-
-class TestServerConfig:
-    def test_server_config_defaults(self):
-        """Test ServerConfig creation with default values"""
-        config = ServerConfig()
-
-        assert config.bind_addr == "0.0.0.0"
-        assert config.bind_port == 7000
-        assert config.vhost_http_port == 80
-        assert config.vhost_https_port == 443
-        assert config.auth_method == AuthMethod.TOKEN
-        assert config.log_level == LogLevel.INFO
-        assert config.max_pool_count == 5
-
-    def test_server_config_validation_errors(self):
-        """Test ServerConfig validation with invalid values"""
-        # Invalid port
-        with pytest.raises(ValidationError, match="greater than or equal to 1"):
-            ServerConfig(bind_port=0)
-
-        with pytest.raises(ValidationError, match="less than or equal to 65535"):
-            ServerConfig(bind_port=65536)
-
-        # Weak auth token
-        with pytest.raises(ValidationError, match="at least 8 characters"):
-            ServerConfig(auth_token="weak")
-
-        # Invalid subdomain host
-        with pytest.raises(ValidationError, match="valid domain"):
-            ServerConfig(subdomain_host="invalid")
-
-    def test_server_config_auth_token_validation(self):
-        """Test auth token validation"""
-        # Valid strong token
-        config = ServerConfig(auth_token="StrongToken123!")
-        assert config.auth_token == "StrongToken123!"
-
-        # Weak token (too simple)
-        with pytest.raises(ValidationError, match="diverse characters"):
-            ServerConfig(auth_token="11111111")
-
-        # Short token
-        with pytest.raises(ValidationError, match="at least 8 characters"):
-            ServerConfig(auth_token="short")
-
-    def test_server_config_subdomain_validation(self):
-        """Test subdomain host validation"""
-        # Valid domains
-        config = ServerConfig(subdomain_host="tunnel.example.com")
-        assert config.subdomain_host == "tunnel.example.com"
-
-        config = ServerConfig(subdomain_host="my-tunnel.example.org")
-        assert config.subdomain_host == "my-tunnel.example.org"
-
-        # Invalid domains
-        with pytest.raises(ValidationError, match="valid domain"):
-            ServerConfig(subdomain_host="invalid")
-
-        with pytest.raises(ValidationError, match="valid domain"):
-            ServerConfig(subdomain_host="")
-
-    def test_server_config_toml_generation(self):
-        """Test TOML configuration generation"""
-        config = ServerConfig(
-            bind_port=7001,
-            vhost_http_port=8080,
-            auth_token="SecureToken123",
-            subdomain_host="tunnel.example.com",
-            log_level=LogLevel.DEBUG
-        )
-
-        toml_content = config.to_toml()
-
-        assert 'bindPort = 7001' in toml_content
-        assert 'vhostHTTPPort = 8080' in toml_content
-        assert 'auth.token = "SecureToken123"' in toml_content
-        assert 'subDomainHost = "tunnel.example.com"' in toml_content
-        assert 'log.level = "debug"' in toml_content
-
-class TestDashboardConfig:
-    def test_dashboard_config_creation(self):
-        """Test DashboardConfig creation"""
-        config = DashboardConfig(
+    def enable_dashboard(
+        self,
+        port: int = 7500,
+        user: str = "admin",
+        password: str = "admin123"
+    ) -> "ServerConfigBuilder":
+        """Enable web dashboard"""
+        self._dashboard_config = DashboardConfig(
             enabled=True,
-            port=7500,
-            user="admin",
-            password="SecurePass123"
+            port=port,
+            user=user,
+            password=password
         )
+        return self
 
-        assert config.enabled is True
-        assert config.port == 7500
-        assert config.user == "admin"
-        assert config.password == "SecurePass123"
+    def configure_logging(
+        self,
+        level: LogLevel = LogLevel.INFO,
+        file_path: Optional[str] = None,
+        max_days: int = 3
+    ) -> "ServerConfigBuilder":
+        """Configure logging settings"""
+        self._server_config = self._server_config.model_copy(update={
+            'log_level': level,
+            'log_file': file_path,
+            'log_max_days': max_days
+        })
+        return self
 
-    def test_dashboard_password_validation(self):
-        """Test dashboard password validation"""
-        # Valid strong password
-        config = DashboardConfig(
-            enabled=True,
-            password="StrongPass123"
-        )
-        assert config.password == "StrongPass123"
+    def build(self) -> str:
+        """Build configuration file and return path"""
+        import tempfile
+        import os
 
-        # Too short
-        with pytest.raises(ValidationError, match="at least 6 characters"):
-            DashboardConfig(enabled=True, password="short")
-
-        # Too weak (no variety)
-        with pytest.raises(ValidationError, match="uppercase, lowercase, and numbers"):
-            DashboardConfig(enabled=True, password="alllowercase")
-
-    def test_dashboard_toml_generation(self):
-        """Test dashboard TOML section generation"""
-        # Enabled dashboard
-        config = DashboardConfig(
-            enabled=True,
-            port=7500,
-            user="admin",
-            password="SecurePass123"
-        )
-
-        toml_section = config.to_toml_section()
-
-        assert "[webServer]" in toml_section
-        assert 'port = 7500' in toml_section
-        assert 'user = "admin"' in toml_section
-        assert 'password = "SecurePass123"' in toml_section
-
-        # Disabled dashboard
-        config = DashboardConfig(enabled=False)
-        toml_section = config.to_toml_section()
-        assert toml_section == ""
-
-class TestSSLConfig:
-    def test_ssl_config_creation(self):
-        """Test SSLConfig creation"""
-        config = SSLConfig(
-            enabled=True,
-            cert_file="/etc/ssl/cert.pem",
-            key_file="/etc/ssl/key.pem"
-        )
-
-        assert config.enabled is True
-        assert config.cert_file == "/etc/ssl/cert.pem"
-        assert config.key_file == "/etc/ssl/key.pem"
-
-    def test_ssl_config_validation_errors(self):
-        """Test SSL configuration validation"""
-        # SSL enabled but missing files
-        with pytest.raises(ValidationError, match="cert_file and key_file are required"):
-            SSLConfig(enabled=True)
-
-        # Let's Encrypt without email
-        with pytest.raises(ValidationError, match="email is required"):
-            SSLConfig(
-                enabled=True,
-                use_letsencrypt=True,
-                letsencrypt_domains=["example.com"]
-            )
-
-        # Let's Encrypt without domains
-        with pytest.raises(ValidationError, match="At least one domain is required"):
-            SSLConfig(
-                enabled=True,
-                use_letsencrypt=True,
-                letsencrypt_email="admin@example.com"
-            )
-
-    def test_ssl_letsencrypt_config(self):
-        """Test Let's Encrypt SSL configuration"""
-        config = SSLConfig(
-            enabled=True,
-            use_letsencrypt=True,
-            letsencrypt_email="admin@example.com",
-            letsencrypt_domains=["tunnel.example.com", "api.example.com"]
-        )
-
-        assert config.use_letsencrypt is True
-        assert config.letsencrypt_email == "admin@example.com"
-        assert len(config.letsencrypt_domains) == 2
-
-    def test_ssl_email_validation(self):
-        """Test email validation"""
-        # Valid email
-        config = SSLConfig(letsencrypt_email="admin@example.com")
-        assert config.letsencrypt_email == "admin@example.com"
-
-        # Invalid emails
-        with pytest.raises(ValidationError, match="Invalid email format"):
-            SSLConfig(letsencrypt_email="invalid-email")
-
-        with pytest.raises(ValidationError, match="Invalid email format"):
-            SSLConfig(letsencrypt_email="admin@invalid")
-
-class TestCompleteServerConfig:
-    def test_complete_config_creation(self):
-        """Test CompleteServerConfig creation"""
-        config = CompleteServerConfig(
-            server=ServerConfig(
-                bind_port=7001,
-                auth_token="SecureToken123"
-            ),
-            dashboard=DashboardConfig(
-                enabled=True,
-                password="AdminPass123"
-            ),
-            ssl=SSLConfig(
-                enabled=True,
-                cert_file="/etc/ssl/cert.pem",
-                key_file="/etc/ssl/key.pem"
-            ),
-            description="Test server configuration"
-        )
-
-        assert config.server.bind_port == 7001
-        assert config.dashboard.enabled is True
-        assert config.ssl.enabled is True
-        assert config.description == "Test server configuration"
-
-    def test_complete_config_toml_generation(self):
-        """Test complete TOML generation"""
-        config = CompleteServerConfig(
-            server=ServerConfig(
-                bind_port=7001,
-                auth_token="SecureToken123",
-                subdomain_host="tunnel.example.com"
-            ),
-            dashboard=DashboardConfig(
-                enabled=True,
-                port=7500,
-                password="AdminPass123"
-            ),
-            description="Production server"
-        )
-
-        toml_content = config.generate_toml()
-
-        # Check header
-        assert "# FRP Server Configuration" in toml_content
-        assert "# Description: Production server" in toml_content
-
-        # Check server config
-        assert "bindPort = 7001" in toml_content
-        assert 'auth.token = "SecureToken123"' in toml_content
-
-        # Check dashboard config
-        assert "[webServer]" in toml_content
-        assert "port = 7500" in toml_content
-
-    def test_config_file_operations(self):
-        """Test saving and loading configuration files"""
-        config = CompleteServerConfig(
-            server=ServerConfig(
-                bind_port=7001,
-                auth_token="SecureToken123"
-            ),
-            dashboard=DashboardConfig(
-                enabled=True,
-                password="AdminPass123"
-            ),
-            description="Test config file operations"
-        )
-
-        # Test saving
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.toml', delete=False) as f:
-            temp_path = Path(f.name)
+        fd, temp_path = tempfile.mkstemp(suffix=".toml", prefix="frps_config_")
 
         try:
-            config.save_to_file(temp_path)
+            with os.fdopen(fd, "w") as f:
+                # Write header comment
+                f.write("# FRP Server Configuration\n")
+                f.write(f"# Generated at: {datetime.now().isoformat()}\n\n")
 
-            # Verify file was created and contains expected content
-            assert temp_path.exists()
-            content = temp_path.read_text()
-            assert "bindPort = 7001" in content
-            assert "[webServer]" in content
+                # Write server configuration
+                f.write(self._server_config.to_toml())
 
-        finally:
-            temp_path.unlink(missing_ok=True)
+                # Write dashboard configuration
+                dashboard_section = self._dashboard_config.to_toml_section()
+                if dashboard_section:
+                    f.write(dashboard_section)
 
-# Integration tests
-class TestServerConfigIntegration:
-    def test_production_config_example(self):
-        """Test creating a production-ready configuration"""
-        config = CompleteServerConfig(
-            server=ServerConfig(
-                bind_port=7000,
-                vhost_http_port=80,
-                vhost_https_port=443,
-                auth_token="ProductionSecureToken123!",
-                subdomain_host="tunnel.example.com",
-                log_level=LogLevel.INFO,
-                log_file="/var/log/frp/frps.log",
-                max_ports_per_client=10,
-                heartbeat_timeout=90
-            ),
-            dashboard=DashboardConfig(
-                enabled=True,
-                port=7500,
-                user="admin",
-                password="SecureDashboardPass123!"
-            ),
-            ssl=SSLConfig(
-                enabled=True,
-                use_letsencrypt=True,
-                letsencrypt_email="admin@example.com",
-                letsencrypt_domains=["tunnel.example.com"]
-            ),
-            description="Production FRP server configuration"
-        )
+            self._config_path = temp_path
+            return self._config_path
 
-        # Generate and validate TOML
-        toml_content = config.generate_toml()
-
-        # Verify all required sections are present
-        assert "bindPort = 7000" in toml_content
-        assert "vhostHTTPPort = 80" in toml_content
-        assert "vhostHTTPSPort = 443" in toml_content
-        assert 'auth.token = "ProductionSecureToken123!"' in toml_content
-        assert 'subDomainHost = "tunnel.example.com"' in toml_content
-        assert "[webServer]" in toml_content
-        assert "port = 7500" in toml_content
-
-        # Verify configuration is valid
-        assert config.server.bind_port == 7000
-        assert config.dashboard.enabled is True
-        assert config.ssl.use_letsencrypt is True
-
-    def test_minimal_config_example(self):
-        """Test creating a minimal development configuration"""
-        config = CompleteServerConfig(
-            server=ServerConfig(
-                bind_port=7000,
-                auth_token="DevToken123"
-            ),
-            dashboard=DashboardConfig(enabled=False),
-            ssl=SSLConfig(enabled=False),
-            description="Development configuration"
-        )
-
-        toml_content = config.generate_toml()
-
-        # Should have basic server config only
-        assert "bindPort = 7000" in toml_content
-        assert 'auth.token = "DevToken123"' in toml_content
-
-        # Should not have dashboard or SSL
-        assert "[webServer]" not in toml_content
-
-    def test_config_validation_comprehensive(self):
-        """Comprehensive validation test"""
-        # Test all validation scenarios work together
-
-        # Valid comprehensive config
-        config = CompleteServerConfig(
-            server=ServerConfig(
-                bind_port=7000,
-                vhost_http_port=80,
-                vhost_https_port=443,
-                auth_token="ComprehensiveToken123!",
-                subdomain_host="tunnel.example.com",
-                log_level=LogLevel.DEBUG,
-                max_pool_count=10,
-                heartbeat_timeout=120
-            ),
-            dashboard=DashboardConfig(
-                enabled=True,
-                port=7500,
-                user="admin",
-                password="ComprehensiveDashPass123!"
-            ),
-            ssl=SSLConfig(
-                enabled=True,
-                use_letsencrypt=True,
-                letsencrypt_email="admin@example.com",
-                letsencrypt_domains=["tunnel.example.com", "api.example.com"]
-            )
-        )
-
-        # Should validate successfully
-        assert config.server.auth_token == "ComprehensiveToken123!"
-        assert config.dashboard.password == "ComprehensiveDashPass123!"
-        assert len(config.ssl.letsencrypt_domains) == 2
-
-        # Generate TOML and verify structure
-        toml_content = config.generate_toml()
-        lines = toml_content.split('\n')
-
-        # Should have proper structure
-        assert any('bindPort = 7000' in line for line in lines)
-        assert any('[webServer]' in line for line in lines)
-        assert any('log.level = "debug"' in line for line in lines)
-```
-
-### 3. Server Management Implementation
-
-```python
-# src/frp_wrapper/server/manager.py
-import logging
-import subprocess
-import time
-import signal
-from pathlib import Path
-from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field, ConfigDict
-
-from .config import CompleteServerConfig
-
-logger = logging.getLogger(__name__)
-
-class ServerStatus(BaseModel):
-    """Pydantic model for server status"""
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    running: bool = Field(..., description="Whether server is running")
-    pid: Optional[int] = Field(None, description="Process ID")
-    start_time: Optional[str] = Field(None, description="Start time")
-    config_file: str = Field(..., description="Configuration file path")
-    version: Optional[str] = Field(None, description="FRP server version")
-    listening_ports: List[int] = Field(default_factory=list, description="Active listening ports")
-    error_message: Optional[str] = Field(None, description="Error message if any")
-
-class ServerManager:
-    """TDD-driven FRP server management"""
-
-    def __init__(self, binary_path: str = "/usr/local/bin/frps"):
-        self.binary_path = binary_path
-        self._validate_binary()
-
-    def _validate_binary(self) -> None:
-        """Validate FRP server binary exists and is executable"""
-        binary = Path(self.binary_path)
-        if not binary.exists():
-            raise FileNotFoundError(f"FRP server binary not found: {self.binary_path}")
-        if not binary.is_file():
-            raise ValueError(f"FRP server binary is not a file: {self.binary_path}")
-        if not binary.stat().st_mode & 0o111:
-            raise PermissionError(f"FRP server binary is not executable: {self.binary_path}")
-
-    def start_server(self, config: CompleteServerConfig, config_file: str) -> int:
-        """Start FRP server with given configuration"""
-        # Save configuration to file
-        config.save_to_file(config_file)
-
-        # Start server process
-        try:
-            cmd = [self.binary_path, "-c", config_file]
-            process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True
-            )
-
-            # Wait a moment to ensure it started successfully
-            time.sleep(2)
-
-            if process.poll() is not None:
-                # Process died immediately
-                stdout, stderr = process.communicate()
-                raise RuntimeError(f"Server failed to start: {stderr.decode()}")
-
-            logger.info(f"FRP server started with PID {process.pid}")
-            return process.pid
-
-        except Exception as e:
-            logger.error(f"Failed to start FRP server: {e}")
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
             raise
 
-    def stop_server(self, pid: int, timeout: int = 10) -> bool:
-        """Stop FRP server gracefully"""
+    def cleanup(self) -> None:
+        """Clean up temporary configuration file"""
+        if self._config_path and os.path.exists(self._config_path):
+            try:
+                os.unlink(self._config_path)
+            except OSError:
+                pass
+            finally:
+                self._config_path = None
+
+    def __enter__(self) -> "ServerConfigBuilder":
+        """Context manager entry"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - automatically cleanup"""
         try:
-            # Send SIGTERM for graceful shutdown
-            process = subprocess.Popen(['kill', '-TERM', str(pid)])
-            process.wait()
-
-            # Wait for process to terminate
-            start_time = time.time()
-            while time.time() - start_time < timeout:
-                try:
-                    # Check if process still exists
-                    subprocess.check_output(['kill', '-0', str(pid)], stderr=subprocess.DEVNULL)
-                    time.sleep(0.5)
-                except subprocess.CalledProcessError:
-                    # Process no longer exists
-                    logger.info(f"FRP server (PID {pid}) stopped gracefully")
-                    return True
-
-            # Force kill if still running
-            logger.warning(f"Force killing FRP server (PID {pid})")
-            subprocess.run(['kill', '-KILL', str(pid)])
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to stop FRP server: {e}")
-            return False
-
-    def get_server_status(self, config_file: str) -> ServerStatus:
-        """Get current server status"""
-        try:
-            # Try to find FRP server process
-            result = subprocess.run(
-                ['pgrep', '-f', f'frps.*{config_file}'],
-                capture_output=True,
-                text=True
-            )
-
-            if result.returncode == 0 and result.stdout.strip():
-                pid = int(result.stdout.strip().split('\n')[0])
-
-                # Get process start time
-                ps_result = subprocess.run(
-                    ['ps', '-o', 'lstart=', '-p', str(pid)],
-                    capture_output=True,
-                    text=True
-                )
-                start_time = ps_result.stdout.strip() if ps_result.returncode == 0 else None
-
-                # Get listening ports
-                listening_ports = self._get_listening_ports(pid)
-
-                return ServerStatus(
-                    running=True,
-                    pid=pid,
-                    start_time=start_time,
-                    config_file=config_file,
-                    listening_ports=listening_ports
-                )
-            else:
-                return ServerStatus(
-                    running=False,
-                    config_file=config_file
-                )
-
-        except Exception as e:
-            return ServerStatus(
-                running=False,
-                config_file=config_file,
-                error_message=str(e)
-            )
-
-    def _get_listening_ports(self, pid: int) -> List[int]:
-        """Get ports that the server process is listening on"""
-        try:
-            result = subprocess.run(
-                ['netstat', '-tlnp'],
-                capture_output=True,
-                text=True
-            )
-
-            ports = []
-            for line in result.stdout.split('\n'):
-                if str(pid) in line and 'LISTEN' in line:
-                    # Extract port from address like "0.0.0.0:7000"
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        addr_port = parts[3]
-                        if ':' in addr_port:
-                            port = addr_port.split(':')[-1]
-                            try:
-                                ports.append(int(port))
-                            except ValueError:
-                                pass
-
-            return sorted(list(set(ports)))
-
+            self.cleanup()
         except Exception:
-            return []
-
-    def reload_config(self, pid: int, new_config: CompleteServerConfig, config_file: str) -> bool:
-        """Reload server configuration"""
-        try:
-            # Save new configuration
-            new_config.save_to_file(config_file)
-
-            # Send SIGHUP to reload
-            subprocess.run(['kill', '-HUP', str(pid)], check=True)
-
-            logger.info(f"Reloaded configuration for FRP server (PID {pid})")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to reload configuration: {e}")
-            return False
-
-    def get_server_version(self) -> Optional[str]:
-        """Get FRP server version"""
-        try:
-            result = subprocess.run(
-                [self.binary_path, '--version'],
-                capture_output=True,
-                text=True
-            )
-
-            if result.returncode == 0:
-                # Parse version from output
-                for line in result.stdout.split('\n'):
-                    if 'frp version' in line:
-                        return line.split()[-1]
-
-            return None
-
-        except Exception:
-            return None
+            pass
+        return False
 ```
 
-## Implementation Timeline (TDD + Pydantic)
+### 2. Server Process Manager (ProcessManager 재사용)
+
+```python
+# src/frp_wrapper/server/process.py
+from ..core.process import ProcessManager
+from ..common.logging import get_logger
+
+logger = get_logger(__name__)
+
+class ServerProcessManager(ProcessManager):
+    """FRP 서버 프로세스 관리 (ProcessManager 패턴 재사용)"""
+
+    def __init__(self, binary_path: str = "/usr/local/bin/frps", config_path: str = ""):
+        """Initialize ServerProcessManager
+
+        Args:
+            binary_path: Path to frps binary (기본값: /usr/local/bin/frps)
+            config_path: Path to FRP server configuration file
+        """
+        super().__init__(binary_path, config_path)
+        logger.info("ServerProcessManager initialized", binary_path=binary_path)
+
+    def get_server_status(self) -> dict:
+        """Get detailed server status"""
+        return {
+            "running": self.is_running(),
+            "pid": self.pid,
+            "binary_path": self.binary_path,
+            "config_path": self.config_path
+        }
+```
+
+### 3. FRP Server Client (FRPClient 패턴 재사용)
+
+```python
+# src/frp_wrapper/server/server.py
+from typing import Optional
+from ..common.logging import get_logger
+from .process import ServerProcessManager
+from .config import ServerConfigBuilder, ServerConfig, DashboardConfig
+
+logger = get_logger(__name__)
+
+class FRPServer:
+    """FRP 서버 관리 클래스 (FRPClient 패턴 재사용)"""
+
+    def __init__(self, binary_path: str = "/usr/local/bin/frps"):
+        """Initialize FRP Server
+
+        Args:
+            binary_path: Path to frps binary
+        """
+        self.binary_path = binary_path
+        self._process_manager: Optional[ServerProcessManager] = None
+        self._config_builder: Optional[ServerConfigBuilder] = None
+        self._config_path: Optional[str] = None
+
+    def configure(
+        self,
+        bind_port: int = 7000,
+        bind_addr: str = "0.0.0.0",
+        auth_token: Optional[str] = None,
+        vhost_http_port: int = 80,
+        vhost_https_port: int = 443,
+        subdomain_host: Optional[str] = None
+    ) -> "FRPServer":
+        """Configure server settings"""
+        self._config_builder = ServerConfigBuilder()
+        self._config_builder.configure_basic(
+            bind_port=bind_port,
+            bind_addr=bind_addr,
+            auth_token=auth_token
+        ).configure_vhost(
+            http_port=vhost_http_port,
+            https_port=vhost_https_port,
+            subdomain_host=subdomain_host
+        )
+
+        logger.info("Server configured", bind_port=bind_port, subdomain_host=subdomain_host)
+        return self
+
+    def enable_dashboard(
+        self,
+        port: int = 7500,
+        user: str = "admin",
+        password: str = "admin123"
+    ) -> "FRPServer":
+        """Enable web dashboard"""
+        if self._config_builder is None:
+            raise ValueError("Must call configure() first")
+
+        self._config_builder.enable_dashboard(port=port, user=user, password=password)
+        logger.info("Dashboard enabled", port=port, user=user)
+        return self
+
+    def start(self) -> bool:
+        """Start FRP server"""
+        if self._config_builder is None:
+            raise ValueError("Must call configure() first")
+
+        # Build configuration
+        self._config_path = self._config_builder.build()
+
+        # Create process manager
+        self._process_manager = ServerProcessManager(
+            binary_path=self.binary_path,
+            config_path=self._config_path
+        )
+
+        # Start server
+        success = self._process_manager.start()
+        if success:
+            logger.info("FRP server started successfully")
+        else:
+            logger.error("Failed to start FRP server")
+
+        return success
+
+    def stop(self) -> bool:
+        """Stop FRP server"""
+        if self._process_manager is None:
+            return True
+
+        success = self._process_manager.stop()
+        if success:
+            logger.info("FRP server stopped")
+        else:
+            logger.warning("Failed to stop FRP server gracefully")
+
+        return success
+
+    def is_running(self) -> bool:
+        """Check if server is running"""
+        if self._process_manager is None:
+            return False
+        return self._process_manager.is_running()
+
+    def get_status(self) -> dict:
+        """Get server status"""
+        if self._process_manager is None:
+            return {"running": False, "configured": self._config_builder is not None}
+
+        return self._process_manager.get_server_status()
+
+    def __enter__(self) -> "FRPServer":
+        """Context manager entry - automatically start server"""
+        logger.debug("Entering FRPServer context")
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - automatically stop server"""
+        logger.debug("Exiting FRPServer context")
+        try:
+            self.stop()
+            if self._config_builder:
+                self._config_builder.cleanup()
+        except Exception as e:
+            logger.error("Error during context exit", error=str(e))
+        return False
+```
+
+## Implementation Timeline (TDD Approach)
 
 ### Day 1: Server Configuration Models
-1. **Write configuration tests**: ServerConfig, DashboardConfig, SSLConfig validation
-2. **Implement Pydantic models**: Configuration classes with comprehensive validation
+1. **Write server config tests**: ServerConfig, DashboardConfig validation
+2. **Implement Pydantic models**: Server configuration with comprehensive validation
 3. **Write TOML generation tests**: Configuration export functionality
-4. **Implement TOML generation**: Native FRP server configuration format
+4. **Implement ServerConfigBuilder**: ConfigBuilder 패턴 재사용
 
-### Day 2: Server Management
-1. **Write server manager tests**: Start, stop, status operations
-2. **Implement ServerManager**: Process management with proper error handling
-3. **Write status monitoring tests**: Process monitoring and port detection
-4. **Implement monitoring**: Real-time server status and health checks
+### Day 2: Server Process Management
+1. **Write server process tests**: ServerProcessManager 테스트
+2. **Implement ServerProcessManager**: ProcessManager 상속으로 구현
+3. **Write FRPServer tests**: 서버 생명주기 관리 테스트
+4. **Implement FRPServer**: FRPClient 패턴 재사용
 
-### Day 3: Integration & Tools
+### Day 3: Integration & Context Managers
 1. **Write integration tests**: End-to-end server management scenarios
-2. **SSL/TLS management**: Certificate handling and Let's Encrypt integration
-3. **Deployment scripts**: Automated installation and setup
-4. **Production testing**: Real FRP server deployment scenarios
+2. **Implement context managers**: 자동 서버 정리
+3. **Write high-level API tests**: 사용자 친화적 API 테스트
+4. **Create usage examples**: 실제 사용 예시 작성
 
 ## File Structure
-```
-src/frp_wrapper/
-├── __init__.py
-├── server/
-│   ├── __init__.py
-│   ├── config.py          # Pydantic configuration models
-│   ├── manager.py         # Server management
-│   ├── ssl.py             # SSL/TLS management
-│   └── installer.py       # Installation utilities
 
-scripts/
-├── install-frp-server.sh  # Server installation script
-├── setup-ssl.sh          # SSL setup script
-└── frps.toml.template     # Configuration template
+```
+src/frp_wrapper/server/
+├── __init__.py           # Server module exports
+├── config.py             # Pydantic server configuration models
+├── process.py            # ServerProcessManager (ProcessManager 상속)
+└── server.py             # FRPServer (main server management class)
 
 tests/
-├── __init__.py
-├── test_server_config.py   # Configuration model tests
-├── test_server_manager.py  # Server management tests
-├── test_ssl_manager.py     # SSL management tests
-└── test_server_integration.py  # Integration tests
+├── test_server_config.py     # Server configuration tests
+├── test_server_process.py    # Server process management tests
+├── test_server_client.py     # FRPServer class tests
+└── test_server_integration.py # Integration tests
 ```
 
 ## Success Criteria
-- [ ] 100% test coverage for all server tools
+- [ ] 100% test coverage for all server components
 - [ ] All Pydantic validation scenarios tested
-- [ ] Production-ready configuration generation
-- [ ] Robust server process management
-- [ ] SSL/TLS certificate automation
-- [ ] Complete deployment automation
-- [ ] Real FRP server integration tested
+- [ ] frps 바이너리와 완전한 호환성
+- [ ] Context manager 자동 정리 기능
+- [ ] 기존 아키텍처와 100% 일관성
+- [ ] Real frps binary integration tested
 
-## Key Pydantic Benefits for Server Tools
-1. **Configuration Validation**: Comprehensive server settings validation
-2. **Type Safety**: Full IDE support for server configurations
-3. **TOML Generation**: Native FRP server configuration format
-4. **Documentation**: Self-documenting configuration options
-5. **Error Messages**: Clear validation error messages for admins
-6. **Versioning**: Configuration schema versioning and migration
+## Key Benefits of This Approach
 
-This approach provides production-ready server management tools with comprehensive validation, excellent developer experience, and robust error handling suitable for enterprise deployments.
+1. **아키텍처 일관성**: frpc와 frps 모두 동일한 패턴
+2. **코드 재사용**: ProcessManager, ConfigBuilder 패턴 재사용
+3. **Type Safety**: Pydantic를 통한 완전한 타입 안전성
+4. **Context Managers**: 자동 리소스 관리
+5. **TDD Coverage**: 모든 기능이 테스트로 검증됨
+6. **Production Ready**: 실제 운영 환경에서 사용 가능
+
+이 접근법으로 frps 래핑이 frpc와 완전히 일관성 있는 아키텍처를 제공하며, 사용자에게 통일된 경험을 제공할 수 있습니다.

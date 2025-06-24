@@ -1,13 +1,15 @@
-# Checkpoint 7: Monitoring & Observability with Pydantic (TDD Approach)
+# Checkpoint 7: Unified Monitoring & Observability (TDD Approach)
 
 ## Overview
-TDD와 Pydantic v2를 활용하여 FRP 터널의 모니터링, 로깅, 메트릭 수집 시스템을 구현합니다. 구조화된 로깅과 강력한 타입 안전성을 제공합니다.
+TDD와 Pydantic v2를 활용하여 **클라이언트 터널과 FRP 서버 전체**에 대한 통합 모니터링, 로깅, 메트릭 수집 시스템을 구현합니다. 구조화된 로깅과 강력한 타입 안전성을 제공합니다.
 
 ## Goals
+- **클라이언트 모니터링**: 터널 상태, 트래픽, 성능 메트릭
+- **서버 모니터링**: 서버 상태, 연결된 클라이언트, 리소스 사용량
+- **통합 대시보드**: 클라이언트-서버 전체 시스템 가시성
 - Pydantic 기반 모니터링 설정 및 메트릭 모델
 - 구조화된 로깅 시스템 구축
-- 실시간 터널 상태 모니터링
-- 이벤트 기반 알림 시스템
+- 실시간 상태 모니터링 및 이벤트 기반 알림
 - TDD 방식의 완전한 테스트 커버리지
 
 ## Test-First Implementation with Pydantic
@@ -40,6 +42,7 @@ class MetricType(str, Enum):
 
 class EventType(str, Enum):
     """Event types for monitoring"""
+    # Client tunnel events
     TUNNEL_CREATED = "tunnel_created"
     TUNNEL_CONNECTED = "tunnel_connected"
     TUNNEL_DISCONNECTED = "tunnel_disconnected"
@@ -47,6 +50,16 @@ class EventType(str, Enum):
     TUNNEL_CLOSED = "tunnel_closed"
     CLIENT_CONNECTED = "client_connected"
     CLIENT_DISCONNECTED = "client_disconnected"
+
+    # Server events
+    SERVER_STARTED = "server_started"
+    SERVER_STOPPED = "server_stopped"
+    SERVER_ERROR = "server_error"
+    SERVER_CLIENT_CONNECTED = "server_client_connected"
+    SERVER_CLIENT_DISCONNECTED = "server_client_disconnected"
+    SERVER_RESOURCE_WARNING = "server_resource_warning"
+
+    # Monitoring events
     METRIC_THRESHOLD_EXCEEDED = "metric_threshold_exceeded"
     HEALTH_CHECK_FAILED = "health_check_failed"
 
@@ -150,6 +163,123 @@ class TunnelMetrics(BaseModel):
             'last_activity': datetime.now()
         })
 
+class ServerMetrics(BaseModel):
+    """Pydantic model for FRP server metrics"""
+
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        validate_assignment=True
+    )
+
+    server_id: str = Field(..., min_length=1, description="Server identifier")
+
+    # Server status
+    server_status: str = Field(default="unknown", description="Current server status")
+    bind_port: int = Field(..., ge=1, le=65535, description="Server bind port")
+    uptime_seconds: float = Field(default=0.0, ge=0, description="Server uptime in seconds")
+
+    # Client connections
+    total_clients_connected: int = Field(default=0, ge=0, description="Total clients ever connected")
+    active_clients: int = Field(default=0, ge=0, description="Currently active clients")
+    max_concurrent_clients: int = Field(default=0, ge=0, description="Maximum concurrent clients")
+
+    # Proxy statistics
+    total_proxies: int = Field(default=0, ge=0, description="Total active proxies")
+    http_proxies: int = Field(default=0, ge=0, description="Active HTTP proxies")
+    tcp_proxies: int = Field(default=0, ge=0, description="Active TCP proxies")
+
+    # Traffic metrics (aggregated from all clients)
+    total_bytes_in: int = Field(default=0, ge=0, description="Total bytes received")
+    total_bytes_out: int = Field(default=0, ge=0, description="Total bytes sent")
+    bytes_in_per_second: float = Field(default=0.0, ge=0, description="Current bytes in per second")
+    bytes_out_per_second: float = Field(default=0.0, ge=0, description="Current bytes out per second")
+
+    # Resource usage
+    cpu_usage_percent: float = Field(default=0.0, ge=0, le=100, description="CPU usage percentage")
+    memory_usage_mb: float = Field(default=0.0, ge=0, description="Memory usage in MB")
+    open_file_descriptors: int = Field(default=0, ge=0, description="Number of open file descriptors")
+
+    # Dashboard metrics
+    dashboard_enabled: bool = Field(default=False, description="Whether dashboard is enabled")
+    dashboard_port: Optional[int] = Field(None, ge=1, le=65535, description="Dashboard port if enabled")
+    dashboard_active_sessions: int = Field(default=0, ge=0, description="Active dashboard sessions")
+
+    # Error tracking
+    error_count: int = Field(default=0, ge=0, description="Total error count")
+    last_error_time: Optional[datetime] = Field(None, description="Last error timestamp")
+    authentication_failures: int = Field(default=0, ge=0, description="Authentication failure count")
+
+    # Timing
+    created_at: datetime = Field(default_factory=datetime.now, description="Metrics creation time")
+    last_updated: datetime = Field(default_factory=datetime.now, description="Last update timestamp")
+
+    @computed_field
+    @property
+    def error_rate(self) -> float:
+        """Calculate error rate as percentage"""
+        if self.total_clients_connected == 0:
+            return 0.0
+        return (self.error_count / self.total_clients_connected) * 100
+
+    @computed_field
+    @property
+    def total_throughput_mbps(self) -> float:
+        """Calculate total throughput in Mbps"""
+        if self.uptime_seconds == 0:
+            return 0.0
+        total_bytes = self.total_bytes_in + self.total_bytes_out
+        return (total_bytes * 8) / (self.uptime_seconds * 1_000_000)
+
+    @computed_field
+    @property
+    def client_utilization(self) -> float:
+        """Calculate client utilization percentage"""
+        if self.max_concurrent_clients == 0:
+            return 0.0
+        return (self.active_clients / self.max_concurrent_clients) * 100
+
+    def update_uptime(self, start_time: datetime) -> 'ServerMetrics':
+        """Update server uptime"""
+        uptime = (datetime.now() - start_time).total_seconds()
+        return self.model_copy(update={
+            'uptime_seconds': uptime,
+            'last_updated': datetime.now()
+        })
+
+    def add_client_connection(self) -> 'ServerMetrics':
+        """Add a new client connection"""
+        new_active = self.active_clients + 1
+        return self.model_copy(update={
+            'total_clients_connected': self.total_clients_connected + 1,
+            'active_clients': new_active,
+            'max_concurrent_clients': max(self.max_concurrent_clients, new_active),
+            'last_updated': datetime.now()
+        })
+
+    def remove_client_connection(self) -> 'ServerMetrics':
+        """Remove a client connection"""
+        return self.model_copy(update={
+            'active_clients': max(0, self.active_clients - 1),
+            'last_updated': datetime.now()
+        })
+
+    def update_traffic(self, bytes_in: int = 0, bytes_out: int = 0) -> 'ServerMetrics':
+        """Update traffic statistics"""
+        return self.model_copy(update={
+            'total_bytes_in': self.total_bytes_in + bytes_in,
+            'total_bytes_out': self.total_bytes_out + bytes_out,
+            'last_updated': datetime.now()
+        })
+
+    def update_resource_usage(self, cpu_percent: float, memory_mb: float, open_fds: int) -> 'ServerMetrics':
+        """Update resource usage metrics"""
+        return self.model_copy(update={
+            'cpu_usage_percent': cpu_percent,
+            'memory_usage_mb': memory_mb,
+            'open_file_descriptors': open_fds,
+            'last_updated': datetime.now()
+        })
+
 class MonitoringAlert(BaseModel):
     """Pydantic model for monitoring alerts"""
 
@@ -162,6 +292,8 @@ class MonitoringAlert(BaseModel):
 
     # Context information
     tunnel_id: Optional[str] = Field(None, description="Related tunnel ID")
+    server_id: Optional[str] = Field(None, description="Related server ID")
+    client_id: Optional[str] = Field(None, description="Related client ID")
     metric_name: Optional[str] = Field(None, description="Related metric name")
     metric_value: Optional[float] = Field(None, description="Metric value that triggered alert")
     threshold_value: Optional[float] = Field(None, description="Threshold that was exceeded")
@@ -196,10 +328,16 @@ class MonitoringConfig(BaseModel):
     metrics_collection_interval: float = Field(default=5.0, ge=0.1, le=300.0, description="Metrics collection interval in seconds")
     health_check_interval: float = Field(default=30.0, ge=1.0, le=3600.0, description="Health check interval in seconds")
 
-    # Alert thresholds
+    # Client alert thresholds
     error_rate_threshold: float = Field(default=5.0, ge=0.0, le=100.0, description="Error rate threshold percentage")
     latency_threshold_ms: float = Field(default=1000.0, ge=0.0, description="Latency threshold in milliseconds")
     connection_threshold: int = Field(default=1000, ge=1, description="Maximum concurrent connections")
+
+    # Server alert thresholds
+    server_cpu_threshold: float = Field(default=80.0, ge=0.0, le=100.0, description="Server CPU usage threshold percentage")
+    server_memory_threshold_mb: float = Field(default=1024.0, ge=0.0, description="Server memory usage threshold in MB")
+    server_client_threshold: int = Field(default=100, ge=1, description="Maximum concurrent server clients")
+    server_error_rate_threshold: float = Field(default=10.0, ge=0.0, le=100.0, description="Server error rate threshold percentage")
 
     # Data retention
     metrics_retention_hours: int = Field(default=24, ge=1, le=8760, description="Metrics retention period in hours")
@@ -233,6 +371,7 @@ class LogEvent(BaseModel):
 
     # Context information
     tunnel_id: Optional[str] = Field(None, description="Related tunnel ID")
+    server_id: Optional[str] = Field(None, description="Related server ID")
     client_id: Optional[str] = Field(None, description="Related client ID")
     event_type: Optional[EventType] = Field(None, description="Event type")
 
@@ -260,7 +399,7 @@ from datetime import datetime, timedelta
 from pydantic import ValidationError
 
 from frp_wrapper.monitoring.models import (
-    LoggingConfig, TunnelMetrics, MonitoringAlert, MonitoringConfig,
+    LoggingConfig, TunnelMetrics, ServerMetrics, MonitoringAlert, MonitoringConfig,
     LogEvent, LogLevel, EventType
 )
 
@@ -374,6 +513,103 @@ class TestTunnelMetrics:
         assert metrics.bytes_sent == 1000
         assert updated_metrics.bytes_sent == 1500
 
+class TestServerMetrics:
+    def test_server_metrics_creation(self):
+        """Test ServerMetrics creation with default values"""
+        metrics = ServerMetrics(server_id="test-server", bind_port=7000)
+
+        assert metrics.server_id == "test-server"
+        assert metrics.bind_port == 7000
+        assert metrics.server_status == "unknown"
+        assert metrics.active_clients == 0
+        assert metrics.total_clients_connected == 0
+        assert metrics.cpu_usage_percent == 0.0
+        assert metrics.memory_usage_mb == 0.0
+        assert isinstance(metrics.created_at, datetime)
+
+    def test_server_metrics_validation_errors(self):
+        """Test ServerMetrics validation with invalid values"""
+        # Empty server ID
+        with pytest.raises(ValidationError, match="at least 1 character"):
+            ServerMetrics(server_id="", bind_port=7000)
+
+        # Invalid port
+        with pytest.raises(ValidationError, match="greater than or equal to 1"):
+            ServerMetrics(server_id="test", bind_port=0)
+
+        # Invalid CPU percentage
+        with pytest.raises(ValidationError, match="less than or equal to 100"):
+            ServerMetrics(server_id="test", bind_port=7000, cpu_usage_percent=101.0)
+
+    def test_server_metrics_computed_fields(self):
+        """Test computed fields in ServerMetrics"""
+        metrics = ServerMetrics(
+            server_id="test-server",
+            bind_port=7000,
+            total_clients_connected=50,
+            error_count=3,
+            total_bytes_in=1_000_000,
+            total_bytes_out=2_000_000,
+            uptime_seconds=60.0,  # 1 minute
+            active_clients=25,
+            max_concurrent_clients=30
+        )
+
+        # Test error rate calculation
+        assert metrics.error_rate == 6.0  # 3 errors out of 50 clients = 6%
+
+        # Test throughput calculation (3MB in 60 seconds = 0.4 Mbps)
+        expected_throughput = (3_000_000 * 8) / (60 * 1_000_000)
+        assert abs(metrics.total_throughput_mbps - expected_throughput) < 0.001
+
+        # Test client utilization
+        assert metrics.client_utilization == 83.33333333333334  # 25/30 * 100
+
+    def test_server_metrics_update_methods(self):
+        """Test update methods for ServerMetrics"""
+        metrics = ServerMetrics(server_id="test-server", bind_port=7000)
+
+        # Test client connection
+        updated_metrics = metrics.add_client_connection()
+        assert updated_metrics.total_clients_connected == 1
+        assert updated_metrics.active_clients == 1
+        assert updated_metrics.max_concurrent_clients == 1
+
+        # Test client disconnection
+        disconnected_metrics = updated_metrics.remove_client_connection()
+        assert disconnected_metrics.active_clients == 0
+        assert disconnected_metrics.total_clients_connected == 1  # Total doesn't decrease
+
+        # Test traffic update
+        traffic_metrics = metrics.update_traffic(bytes_in=1024, bytes_out=2048)
+        assert traffic_metrics.total_bytes_in == 1024
+        assert traffic_metrics.total_bytes_out == 2048
+        assert traffic_metrics.last_updated is not None
+
+        # Test resource usage update
+        resource_metrics = metrics.update_resource_usage(cpu_percent=75.5, memory_mb=512.0, open_fds=100)
+        assert resource_metrics.cpu_usage_percent == 75.5
+        assert resource_metrics.memory_usage_mb == 512.0
+        assert resource_metrics.open_file_descriptors == 100
+
+    def test_server_metrics_uptime_calculation(self):
+        """Test uptime calculation"""
+        start_time = datetime.now() - timedelta(seconds=120)  # 2 minutes ago
+        metrics = ServerMetrics(server_id="test-server", bind_port=7000)
+
+        updated_metrics = metrics.update_uptime(start_time)
+        assert updated_metrics.uptime_seconds >= 119  # Should be close to 120 seconds
+        assert updated_metrics.last_updated is not None
+
+    def test_server_metrics_immutability(self):
+        """Test that ServerMetrics is immutable"""
+        metrics = ServerMetrics(server_id="test-server", bind_port=7000, active_clients=5)
+        updated_metrics = metrics.add_client_connection()
+
+        # Original should be unchanged
+        assert metrics.active_clients == 5
+        assert updated_metrics.active_clients == 6
+
 class TestMonitoringAlert:
     def test_monitoring_alert_creation(self):
         """Test MonitoringAlert creation"""
@@ -443,6 +679,10 @@ class TestMonitoringConfig:
         assert config.metrics_collection_interval == 5.0
         assert config.health_check_interval == 30.0
         assert config.error_rate_threshold == 5.0
+        assert config.server_cpu_threshold == 80.0
+        assert config.server_memory_threshold_mb == 1024.0
+        assert config.server_client_threshold == 100
+        assert config.server_error_rate_threshold == 10.0
         assert config.enable_dashboard is False
 
     def test_monitoring_config_validation_errors(self):
@@ -1038,23 +1278,26 @@ class MonitoringSystem:
 
 ## Implementation Timeline (TDD + Pydantic)
 
-### Day 1: Monitoring Models & Configuration
-1. **Write monitoring model tests**: TunnelMetrics, MonitoringAlert, LogEvent validation
-2. **Implement Pydantic models**: Comprehensive monitoring data models
-3. **Write configuration tests**: MonitoringConfig validation and serialization
-4. **Implement configuration**: Type-safe monitoring system configuration
+### Day 1: Unified Monitoring Models & Configuration
+1. **Write client monitoring tests**: TunnelMetrics, LogEvent validation
+2. **Write server monitoring tests**: ServerMetrics, resource usage validation
+3. **Implement Pydantic models**: Client and server monitoring data models
+4. **Write configuration tests**: MonitoringConfig with client+server thresholds
+5. **Implement configuration**: Type-safe unified monitoring system configuration
 
 ### Day 2: Metrics Collection & Logging
-1. **Write metrics collector tests**: Collection, thresholds, alerts
-2. **Implement MetricsCollector**: Real-time metrics collection with threading
-3. **Write structured logging tests**: JSON formatting, log levels, file rotation
-4. **Implement StructuredLogger**: Pydantic-based structured logging
+1. **Write client metrics collector tests**: Tunnel collection, thresholds, alerts
+2. **Write server metrics collector tests**: Server resource monitoring, client tracking
+3. **Implement MetricsCollector**: Real-time client and server metrics collection
+4. **Write structured logging tests**: Unified JSON formatting, log levels, file rotation
+5. **Implement StructuredLogger**: Pydantic-based structured logging for all components
 
-### Day 3: Integration & Monitoring System
-1. **Write monitoring system tests**: Complete system integration
-2. **Implement MonitoringSystem**: Coordinated monitoring components
-3. **Write dashboard tests**: Web interface and API endpoints
-4. **Integration testing**: Real FRP monitoring scenarios
+### Day 3: Integration & Unified Dashboard
+1. **Write unified monitoring system tests**: Client-server integrated monitoring
+2. **Implement MonitoringSystem**: Coordinated monitoring for both client and server
+3. **Write unified dashboard tests**: Combined client-server web interface
+4. **Implement unified dashboard**: Real-time visibility into entire FRP system
+5. **Integration testing**: End-to-end monitoring scenarios with real FRP client and server
 
 ## File Structure
 ```
@@ -1076,20 +1319,24 @@ tests/
 ```
 
 ## Success Criteria
-- [ ] 100% test coverage for monitoring system
-- [ ] All Pydantic validation scenarios tested
-- [ ] Real-time metrics collection working
-- [ ] Structured logging with JSON output
-- [ ] Alert threshold system functional
-- [ ] Thread-safe metrics handling
-- [ ] Integration with FRP tunnels tested
+- [ ] 100% test coverage for unified monitoring system
+- [ ] All Pydantic validation scenarios tested (client + server)
+- [ ] Real-time client tunnel metrics collection working
+- [ ] Real-time server resource metrics collection working
+- [ ] Unified structured logging with JSON output
+- [ ] Client and server alert threshold systems functional
+- [ ] Thread-safe metrics handling for both components
+- [ ] Integration with FRP tunnels and server tested
+- [ ] Unified dashboard showing complete system status
+- [ ] End-to-end monitoring scenarios validated
 
-## Key Pydantic Benefits for Monitoring
-1. **Data Validation**: Comprehensive metrics and configuration validation
-2. **Type Safety**: Full IDE support for monitoring data structures
-3. **Serialization**: Easy JSON export for dashboards and APIs
-4. **Computed Fields**: Automatic calculation of derived metrics
-5. **Immutability**: Safe concurrent access to metrics data
-6. **Documentation**: Self-documenting monitoring configuration
+## Key Pydantic Benefits for Unified Monitoring
+1. **Comprehensive Validation**: Client and server metrics with full validation
+2. **Type Safety**: Complete IDE support for all monitoring data structures
+3. **Unified Serialization**: Consistent JSON export for integrated dashboards
+4. **Computed Fields**: Automatic calculation of derived metrics for both client and server
+5. **Immutability**: Safe concurrent access to all metrics data
+6. **Self-Documentation**: Auto-documenting monitoring configuration for entire system
+7. **Consistent Patterns**: Identical monitoring patterns for client and server components
 
-This approach provides production-ready monitoring with comprehensive validation, excellent performance, and robust error handling suitable for enterprise deployments.
+This approach provides production-ready unified monitoring with comprehensive validation, excellent performance, and robust error handling suitable for enterprise deployments, offering complete visibility into the entire FRP system from a single interface.

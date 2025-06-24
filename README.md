@@ -57,13 +57,16 @@ locations = ["/myapp"]  # Native FRP feature!
 
 ## Project Status
 
-**✅ Checkpoint 4 Complete - Path-based Routing**
+**✅ Checkpoint 5 Complete - Context Manager Implementation**
 
 This project has been implemented with:
 - Object-oriented design with Pydantic models
-- Test-driven development (95%+ coverage)
+- Test-driven development (95%+ coverage achieved)
 - Protocol pattern for clean architecture
 - Native FRP `locations` support
+- Context managers for automatic resource cleanup
+- Async support (AsyncProcessManager)
+- Tunnel groups for batch management
 
 See [CLAUDE.md](CLAUDE.md) for development guidelines.
 
