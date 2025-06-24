@@ -3,6 +3,7 @@
 # High-level API
 from . import (
     core,  # For test access to core.client, core.config, etc.
+    server,  # For test access to server components
     tunnels,  # For test access to tunnels.manager, etc.
 )
 from .api import (
@@ -45,6 +46,9 @@ from .common.utils import (
 # Core functionality
 from .core.client import FRPClient
 from .core.config import ConfigBuilder
+
+# Server components
+from .server.server import FRPServer
 from .tunnels.group import TunnelGroup, tunnel_group
 
 # Tunnel management
@@ -82,6 +86,8 @@ __all__ = [
     # Core client functionality
     "FRPClient",
     "ConfigBuilder",
+    # Server functionality
+    "FRPServer",
     # Tunnel management
     "TunnelManager",
     "TunnelProcessManager",
@@ -115,6 +121,7 @@ __all__ = [
     "mask_sensitive_data",
     "sanitize_log_data",
     "core",
+    "server",
     "tunnels",
     "client",
     "config",

@@ -12,198 +12,160 @@ FRP Python Wrapper is a self-hostable tunneling solution (like ngrok) that lever
 
 ## Development Commands
 
-### Setting up the environment
+### Environment Setup
 ```bash
-# This project uses uv for dependency management
-# Install all dependencies including dev and test extras
+# Install all dependencies (uv is required)
 uv sync --all-extras
 
 # Install pre-commit hooks
 uv run pre-commit install
 
-# Install FRP binary (required external dependency)
-# Download from: https://github.com/fatedier/frp/releases
+# Create new virtual environment if needed
+uv venv
+
+# Fix VIRTUAL_ENV conflicts
+unset VIRTUAL_ENV
+# Or use direct Python path: .venv/bin/python -m pytest
 ```
 
-### Running tests (TDD Approach)
+### Running Tests
 ```bash
-# Run all tests with coverage (configured in pyproject.toml)
+# Run all tests with coverage
 uv run pytest
-
-# Run tests in watch mode for TDD
-uv run pytest-watch
+# Or if VIRTUAL_ENV conflicts: .venv/bin/python -m pytest
 
 # Run specific test file
-uv run pytest tests/test_process.py
-
-# Run tests with verbose output
-uv run pytest -v
+uv run pytest tests/test_process.py -v
 
 # Run specific test method
 uv run pytest tests/test_process.py::test_process_manager_start -v
 
-# Run tests excluding integration tests
+# Run tests excluding integration
 uv run pytest -m "not integration"
-
-# Run async tests only
-uv run pytest -m "asyncio"
 
 # Check coverage report
 uv run pytest --cov=src/frp_wrapper --cov-report=html
-open htmlcov/index.html  # View coverage report
+open htmlcov/index.html
 ```
 
-### Linting and type checking
+### Code Quality
 ```bash
-# Type checking with mypy (strict mode)
+# Type checking (strict mode)
 uv run mypy src/
 
-# Linting with ruff
+# Linting and formatting
 uv run ruff check src/
-
-# Auto-formatting with ruff
 uv run ruff format src/
 
 # Run all pre-commit hooks
 uv run pre-commit run --all-files
-```
 
-### Building and packaging
-```bash
 # Build package
 uv build
-
-# For PyPI upload (when ready)
-uv run twine upload dist/*
 ```
 
 ## Architecture Overview
 
 ### Core Components
 
-1. **FRPClient** (`core/client.py`)
-   - Main entry point for users
-   - Manages connection lifecycle to FRP server
-   - Coordinates ProcessManager and TunnelManager
-   - Provides context manager support
+1. **Client Side (FRP Client Wrapper)**
+   - `FRPClient` (`core/client.py`): Main entry point, orchestrates all components
+   - `ProcessManager` (`core/process.py`): Manages frpc binary lifecycle
+   - `ConfigBuilder` (`core/config.py`): Generates TOML configuration
+   - `TunnelManager` (`tunnels/manager.py`): Manages tunnel lifecycle
 
-2. **ProcessManager** (`core/process.py`)
-   - Manages FRP binary (frpc) lifecycle
-   - Health monitoring with configurable startup timeout
-   - Graceful shutdown with SIGTERM/SIGKILL fallback
-   - Thread-safe operations
-
-3. **TunnelManager** (`tunnels/manager.py`)
-   - Creates and manages individual tunnels
-   - Path conflict detection and resolution
-   - Registry of active tunnels
-   - Integrates with TunnelProcessManager for per-tunnel processes
-
-4. **ConfigBuilder** (`core/config.py`)
-   - Generates TOML configuration for FRP
-   - Temporary file management with automatic cleanup
-   - Server and proxy configuration
+2. **Server Side (FRP Server Wrapper)** - Checkpoint 6
+   - `FRPServer` (`server/server.py`): Server management following FRPClient pattern
+   - `ServerProcessManager` (`server/process.py`): Extends ProcessManager for frps
+   - `ServerConfigBuilder` (`server/config.py`): Server-specific TOML generation
+   - Same patterns as client but for frps binary
 
 ### Key Architectural Patterns
 
 #### Protocol Pattern for Circular Dependencies
-The project uses Protocol interfaces to solve circular import issues:
 ```python
-# tunnels/interfaces.py defines protocols
+# tunnels/interfaces.py
 class TunnelManagerProtocol(Protocol):
     def start_tunnel(self, tunnel_id: str) -> bool: ...
     def stop_tunnel(self, tunnel_id: str) -> bool: ...
-
-# models.py uses protocol instead of importing manager
-class BaseTunnel(BaseModel):
-    _manager: TunnelManagerProtocol | None = None
 ```
 
-#### Pydantic Models with Validation
-All data models use Pydantic for runtime validation:
+#### Pydantic Validation Throughout
 ```python
-class HTTPTunnel(BaseTunnel):
-    type: Literal[TunnelType.HTTP] = TunnelType.HTTP
-    local_port: int = Field(..., ge=1, le=65535)
-    path: str = Field(..., min_length=1)
-    custom_domains: list[str] = Field(default_factory=list)
+# All configs use Pydantic with field validation
+class ServerConfig(BaseModel):
+    bind_port: int = Field(default=7000, ge=1, le=65535)
+    auth_token: Optional[str] = Field(default=None, min_length=8)
 ```
 
 #### Context Manager Pattern
-Resource management through context managers:
-```python
-# Automatic cleanup
-with FRPClient("example.com") as client:
-    tunnel = client.expose_path(3000, "/app")
-    # Use tunnel
-# Automatic disconnect and cleanup
-
-# Managed tunnels
-with managed_tunnel("example.com", 3000, "/app") as url:
-    # Use tunnel
-# Automatic cleanup
-```
+- Automatic resource cleanup for both client and server
+- Nested context managers for complex scenarios
+- Timeout contexts with configurable strategies
 
 ### Component Interaction Flow
-
 ```
-User Code
-    ↓
-FRPClient (orchestrator)
-    ├── ConfigBuilder (generates TOML)
-    ├── ProcessManager (manages frpc binary)
-    └── TunnelManager (manages tunnels)
-        ├── HTTPTunnel/TCPTunnel (data models)
-        ├── TunnelProcessManager (per-tunnel processes)
+FRPClient/FRPServer
+    ├── ConfigBuilder (TOML generation)
+    ├── ProcessManager (binary lifecycle)
+    └── TunnelManager (tunnel management)
+        ├── HTTPTunnel/TCPTunnel (models)
         └── PathRouter (conflict detection)
 ```
 
 ## Critical Implementation Details
 
 ### State Management
-- All stateful classes track their state with boolean methods (`is_running()`, `is_connected()`)
-- State transitions are atomic and thread-safe
-- Context managers ensure cleanup even on exceptions
+- Boolean state methods: `is_running()`, `is_connected()`
+- Thread-safe operations with proper locking
+- Context managers ensure cleanup on exceptions
+
+### Testing Strategy
+- **95% minimum coverage** enforced
+- Mock external dependencies (subprocess, filesystem)
+- Integration tests marked with `@pytest.mark.integration`
+- Always mock `_validate_paths` for process tests
+
+### Pydantic Model Validation
+- Use `Field(default=None)` for Optional fields, not `Field(None)`
+- For model updates, create new instances to trigger validation:
+  ```python
+  # Don't use model_copy(update=...) - validation may not run
+  current_dict = self._config.model_dump()
+  current_dict.update(new_values)
+  self._config = ConfigModel(**current_dict)  # Triggers validation
+  ```
 
 ### Error Handling
-Custom exception hierarchy for clear error categorization:
-- `FRPWrapperError` (base)
-  - `BinaryNotFoundError` (FRP binary issues)
-  - `ConnectionError` (network/server issues)
-  - `AuthenticationError` (auth failures)
-  - `ProcessError` (process management)
-  - `TunnelError` (tunnel-specific issues)
-
-### Testing Requirements
-- **Minimum 95% coverage** enforced in pyproject.toml
-- Mock all external dependencies (subprocess, filesystem)
-- Integration tests marked with `@pytest.mark.integration`
-- Critical pattern: Always mock `is_running()` when testing `is_connected()`
-
-### Logging Strategy
-- Structured logging with structlog
-- JSON format for machine parsing
-- Sensitive data sanitization (tokens, passwords)
-- Log levels: DEBUG for development, INFO for production
+- Custom exception hierarchy with `FRPWrapperError` base
+- Specific exceptions: `BinaryNotFoundError`, `ConnectionError`, `ProcessError`
+- Always use structured logging with context
 
 ## Common Development Tasks
 
-### Adding a New Tunnel Type
-1. Define model in `tunnels/models.py` inheriting from `BaseTunnel`
-2. Add creation method to `TunnelManager`
-3. Add high-level API function in `api.py`
-4. Write tests first (TDD)
-5. Update type exports in `__init__.py`
+### Adding New Features
+1. Write documentation first (`docs/qna/`)
+2. Write tests following TDD
+3. Implement with Pydantic models
+4. Update exports in `__init__.py`
+5. Ensure 95%+ coverage
 
-### Debugging Connection Issues
-1. Check FRP binary path: `which frpc`
-2. Enable debug logging: `setup_logging(level="DEBUG")`
-3. Verify server connectivity: `telnet server 7000`
-4. Check generated config: `cat /tmp/frpc_*.toml`
+### Debugging Issues
+```bash
+# Check FRP binary paths
+which frpc frps
+
+# Enable debug logging
+export STRUCTLOG_LEVEL=DEBUG
+
+# Check generated configs
+cat /tmp/frpc_*.toml
+cat /tmp/frps_*.toml
+```
 
 ### Running Integration Tests
 ```bash
-# Requires FRP server running
+# Start FRP server for testing
 docker run -d -p 7000:7000 -p 80:80 snowdreamtech/frps
 
 # Run integration tests
@@ -212,35 +174,27 @@ uv run pytest -m integration
 
 ## Implementation Status
 
-**Current Phase**: Checkpoint 5 Complete (Context Manager Implementation)
-- ✅ ProcessManager with health monitoring
-- ✅ FRPClient with connection management
-- ✅ TunnelManager with lifecycle management
-- ✅ Path-based routing with conflict detection
-- ✅ Context managers for automatic cleanup
-- ✅ Async support (AsyncProcessManager)
-- ✅ Tunnel groups for batch management
-- ✅ 95%+ test coverage achieved
+**Current Phase**: Checkpoint 6 Complete (Server Wrapper Implementation)
+- ✅ Client-side wrapper (Checkpoints 1-5)
+- ✅ Server-side wrapper with same patterns
+- ✅ 95%+ test coverage maintained
+- ✅ TDD approach with documentation first
 
-**Next Checkpoints**:
-- Checkpoint 6: Server-side tools
+**Key Insights from Checkpoint 6**:
+- frps uses identical execution pattern as frpc (`./frps -c config.toml`)
+- ProcessManager fully reusable, only binary path differs
+- Pydantic validation prevents configuration errors
+- Dashboard configuration with password strength validation
+
+**Next Steps**:
 - Checkpoint 7: Monitoring and metrics
 - Checkpoint 8: Examples and documentation
 
-## Environment Requirements
-
-- **Python 3.11+** (uses union types, match statements)
-- **uv** for dependency management (not pip/poetry)
-- **FRP binary** must be downloaded separately
-- **Pre-commit hooks** for code quality
-- **Integration tests** require FRP server or mocks
-
 ## API Stability
 
-The following APIs are considered stable:
-- `create_tunnel()`, `create_tcp_tunnel()`
-- `managed_tunnel()`, `managed_tcp_tunnel()`
-- `FRPClient` context manager
+Stable APIs:
+- `FRPClient`, `FRPServer` context managers
+- `create_tunnel()`, `managed_tunnel()` functions
 - `TunnelManager` core methods
 
-Internal APIs (process management, config generation) may change between versions.
+Internal APIs may change between versions.
