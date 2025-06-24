@@ -28,7 +28,7 @@ class TestTunnelManagerProcessManagement:
     @pytest.fixture
     def tunnel_manager(self, tunnel_config):
         """Create TunnelManager with mocked FRP binary."""
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/local/bin/frpc"
             manager = TunnelManager(tunnel_config)
             return manager
@@ -55,8 +55,12 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
+            patch(
+                "frp_wrapper.client.tunnel.process.ConfigBuilder"
+            ) as mock_config_builder,
+            patch(
+                "frp_wrapper.client.tunnel.process.ProcessManager"
+            ) as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -92,8 +96,12 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(tcp_tunnel)
 
         with (
-            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
+            patch(
+                "frp_wrapper.client.tunnel.process.ConfigBuilder"
+            ) as mock_config_builder,
+            patch(
+                "frp_wrapper.client.tunnel.process.ProcessManager"
+            ) as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -126,8 +134,12 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
+            patch(
+                "frp_wrapper.client.tunnel.process.ConfigBuilder"
+            ) as mock_config_builder,
+            patch(
+                "frp_wrapper.client.tunnel.process.ProcessManager"
+            ) as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -150,8 +162,12 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
+            patch(
+                "frp_wrapper.client.tunnel.process.ConfigBuilder"
+            ) as mock_config_builder,
+            patch(
+                "frp_wrapper.client.tunnel.process.ProcessManager"
+            ) as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -179,8 +195,12 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
+            patch(
+                "frp_wrapper.client.tunnel.process.ConfigBuilder"
+            ) as mock_config_builder,
+            patch(
+                "frp_wrapper.client.tunnel.process.ProcessManager"
+            ) as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -205,7 +225,9 @@ class TestTunnelManagerProcessManagement:
         """Test exception handling in start_tunnel_process."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
-        with patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder:
+        with patch(
+            "frp_wrapper.client.tunnel.process.ConfigBuilder"
+        ) as mock_config_builder:
             # Setup ConfigBuilder to raise exception
             mock_config_builder.side_effect = Exception("Config error")
 

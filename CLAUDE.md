@@ -34,11 +34,12 @@ unset VIRTUAL_ENV
 uv run pytest
 # Or if VIRTUAL_ENV conflicts: .venv/bin/python -m pytest
 
-# Run specific test file
-uv run pytest tests/test_process.py -v
+# Run specific test file (note new test directory structure)
+uv run pytest tests/client/test_client.py -v
+uv run pytest tests/client/tunnel/test_models.py -v
 
 # Run specific test method
-uv run pytest tests/test_process.py::test_process_manager_start -v
+uv run pytest tests/client/test_process.py::TestProcessManager::test_process_manager_starts_process -v
 
 # Run tests excluding integration
 uv run pytest -m "not integration"
@@ -66,26 +67,59 @@ uv build
 
 ## Architecture Overview
 
+### Directory Structure
+
+```
+src/frp_wrapper/
+├── client/           # Client-side components (frpc wrapper)
+│   ├── tunnel/      # Tunnel management subsystem
+│   │   ├── models.py      # Pydantic models (HTTPTunnel, TCPTunnel)
+│   │   ├── manager.py     # TunnelManager orchestrator
+│   │   ├── registry.py    # TunnelRegistry for active tunnels
+│   │   ├── process.py     # TunnelProcessManager
+│   │   └── routing/       # Path-based routing logic
+│   ├── client.py    # FRPClient main entry point
+│   ├── config.py    # ConfigBuilder for TOML generation
+│   ├── process.py   # ProcessManager for frpc binary
+│   └── group.py     # TunnelGroup for batch operations
+├── server/          # Server-side components (frps wrapper)
+│   ├── server.py    # FRPServer main entry point
+│   ├── config.py    # ServerConfigBuilder with dashboard support
+│   └── process.py   # ServerProcessManager
+└── common/          # Shared components
+    ├── context.py   # Context managers and timeout handling
+    ├── exceptions.py # Exception hierarchy
+    └── logging.py   # Structured logging setup
+
+tests/               # Mirrors src structure
+├── client/
+│   └── tunnel/
+│       └── routing/
+├── server/
+└── common/
+```
+
 ### Core Components
 
 1. **Client Side** (`src/frp_wrapper/client/`)
-   - `FRPClient` (`client/client.py`): Main entry point, orchestrates all components
-   - `ProcessManager` (`client/process.py`): Manages frpc binary lifecycle
-   - `ConfigBuilder` (`client/config.py`): Generates TOML configuration
-   - `HTTPTunnel`/`TCPTunnel` (`client/tunnel.py`): Tunnel models with Pydantic
-   - `TunnelGroup` (`client/group.py`): Batch tunnel management
+   - `FRPClient`: Main entry point, orchestrates all components
+   - `ProcessManager`: Manages frpc binary lifecycle
+   - `ConfigBuilder`: Generates TOML configuration
+   - `TunnelManager`: High-level tunnel management with registry
+   - `HTTPTunnel`/`TCPTunnel`: Immutable Pydantic models
+   - `TunnelGroup`: Batch tunnel management with LIFO/FIFO cleanup
 
 2. **Server Side** (`src/frp_wrapper/server/`)
-   - `FRPServer` (`server/server.py`): Server management following FRPClient pattern
-   - `ServerProcessManager` (`server/process.py`): Extends ProcessManager for frps
-   - `ServerConfigBuilder` (`server/config.py`): Server-specific TOML generation
-   - Same patterns as client but for frps binary
+   - `FRPServer`: Server management following FRPClient pattern
+   - `ServerProcessManager`: Extends ProcessManager for frps
+   - `ServerConfigBuilder`: Server-specific TOML with dashboard support
+   - `DashboardConfig`: Pydantic model with password validation
 
 3. **Common Components** (`src/frp_wrapper/common/`)
-   - `context.py`: Context managers for resource cleanup and timeouts
-   - `exceptions.py`: Custom exception hierarchy
-   - `logging.py`: Structured logging with structlog
-   - `utils.py`: Shared utilities
+   - `TimeoutContext`: Configurable timeout strategies
+   - `FRPWrapperError`: Base exception with specific subclasses
+   - `get_logger()`: Structured logging factory
+   - `find_available_port()`: Port allocation utilities
 
 ### Key Architectural Patterns
 
@@ -93,7 +127,7 @@ uv build
 - Client components handle frpc binary and tunnel management
 - Server components handle frps binary and server configuration
 - Common components provide shared functionality across both
-- All components use dependency injection and interfaces
+- Tunnel subsystem split into focused modules after refactoring
 
 #### Pydantic Validation Throughout
 ```python
@@ -101,22 +135,31 @@ uv build
 class ServerConfig(BaseModel):
     bind_port: int = Field(default=7000, ge=1, le=65535)
     auth_token: Optional[str] = Field(default=None, min_length=8)
+
+# Immutable tunnel models
+class HTTPTunnel(BaseTunnel):
+    path: str = Field(..., pattern=r"^[a-zA-Z0-9][a-zA-Z0-9\-_/\*\.]*$")
+    custom_domains: list[str] = Field(default_factory=list)
 ```
 
 #### Context Manager Pattern
 - Automatic resource cleanup for both client and server
 - Nested context managers for complex scenarios
 - Timeout contexts with configurable strategies
+- Tunnels can be used as context managers with auto-start/stop
 
 ### Component Interaction Flow
 ```
 FRPClient/FRPServer
     ├── ConfigBuilder (TOML generation)
     ├── ProcessManager (binary lifecycle)
-    └── Tunnel Management
-        ├── HTTPTunnel/TCPTunnel (Pydantic models)
+    └── Tunnel Management (client only)
+        ├── TunnelManager (orchestrator)
+        ├── TunnelRegistry (active tunnel tracking)
+        ├── TunnelProcessManager (FRP process per tunnel)
+        ├── HTTPTunnel/TCPTunnel (immutable models)
         ├── TunnelGroup (batch operations)
-        └── Path-based routing via FRP locations
+        └── PathConflictDetector (routing validation)
 ```
 
 ## Critical Implementation Details
@@ -125,9 +168,11 @@ FRPClient/FRPServer
 - Boolean state methods: `is_running()`, `is_connected()`
 - Thread-safe operations with proper locking
 - Context managers ensure cleanup on exceptions
+- Immutable tunnel models with `with_status()` method for state transitions
 
 ### Testing Strategy
-- **95% minimum coverage** enforced
+- **95% minimum coverage** enforced (currently at 95.97%)
+- Test files organized to mirror src structure
 - Mock external dependencies (subprocess, filesystem)
 - Integration tests marked with `@pytest.mark.integration`
 - Always mock `_validate_paths` for process tests
@@ -141,17 +186,19 @@ FRPClient/FRPServer
   current_dict.update(new_values)
   self._config = ConfigModel(**current_dict)  # Triggers validation
   ```
+- Immutable models use frozen=True and provide builder methods
 
 ### Error Handling
 - Custom exception hierarchy with `FRPWrapperError` base
 - Specific exceptions: `BinaryNotFoundError`, `ConnectionError`, `ProcessError`
+- Tunnel-specific: `TunnelManagerError`, `TunnelRegistryError`
 - Always use structured logging with context
 
 ## Common Development Tasks
 
 ### Adding New Features
 1. Write documentation first (`docs/qna/`)
-2. Write tests following TDD
+2. Write tests following TDD in appropriate test directory
 3. Implement with Pydantic models
 4. Update exports in `__init__.py`
 5. Ensure 95%+ coverage
@@ -167,6 +214,9 @@ export STRUCTLOG_LEVEL=DEBUG
 # Check generated configs
 cat /tmp/frpc_*.toml
 cat /tmp/frps_*.toml
+
+# Run specific test category
+uv run pytest tests/client/tunnel/ -v
 ```
 
 ### Running Integration Tests

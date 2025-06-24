@@ -294,7 +294,7 @@ class TestTunnelManager:
         from frp_wrapper.client.tunnel import TunnelConfig, TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel(
@@ -317,7 +317,7 @@ class TestTunnelManager:
         from frp_wrapper.client.tunnel import TunnelManager, TunnelManagerError
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
 
@@ -329,7 +329,7 @@ class TestTunnelManager:
         from frp_wrapper.client.tunnel import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_tcp_tunnel(tunnel_id="stop-test", local_port=3000)
@@ -354,7 +354,7 @@ class TestTunnelManager:
         from frp_wrapper.client.tunnel import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel(
@@ -372,7 +372,7 @@ class TestTunnelManager:
         from frp_wrapper.client.tunnel import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel("active-1", 3000, "app1")
@@ -394,7 +394,7 @@ class TestTunnelManager:
         from frp_wrapper.client.tunnel import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel(
@@ -417,7 +417,7 @@ class TestTunnelManager:
         from frp_wrapper.client.tunnel import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
         manager.create_http_tunnel("shutdown-1", 3000, "app1")
@@ -444,7 +444,7 @@ class TestTunnelManager:
         from frp_wrapper.client.tunnel import TunnelManager
 
         config = TunnelConfig(server_host="test.example.com")
-        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.manager.shutil.which") as mock_which:
             mock_which.return_value = "/usr/bin/frpc"
             manager = TunnelManager(config)
 
