@@ -4,10 +4,15 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from frp_wrapper.core.config import ConfigBuilder
-from frp_wrapper.core.process import ProcessManager
-from frp_wrapper.tunnels.manager import TunnelManager
-from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel, TunnelConfig, TunnelStatus
+from frp_wrapper.client.config import ConfigBuilder
+from frp_wrapper.client.process import ProcessManager
+from frp_wrapper.client.tunnel import (
+    HTTPTunnel,
+    TCPTunnel,
+    TunnelConfig,
+    TunnelManager,
+    TunnelStatus,
+)
 
 
 class TestTunnelManagerProcessManagement:
@@ -23,7 +28,7 @@ class TestTunnelManagerProcessManagement:
     @pytest.fixture
     def tunnel_manager(self, tunnel_config):
         """Create TunnelManager with mocked FRP binary."""
-        with patch("frp_wrapper.tunnel_manager.shutil.which") as mock_which:
+        with patch("frp_wrapper.client.tunnel.shutil.which") as mock_which:
             mock_which.return_value = "/usr/local/bin/frpc"
             manager = TunnelManager(tunnel_config)
             return manager
@@ -50,8 +55,8 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -87,8 +92,8 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(tcp_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -121,8 +126,8 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -145,8 +150,8 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -174,8 +179,8 @@ class TestTunnelManagerProcessManagement:
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
         with (
-            patch("frp_wrapper.tunnel_process.ConfigBuilder") as mock_config_builder,
-            patch("frp_wrapper.tunnel_process.ProcessManager") as mock_process_manager,
+            patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder,
+            patch("frp_wrapper.client.tunnel.ProcessManager") as mock_process_manager,
         ):
             # Setup mocks
             mock_builder = Mock(spec=ConfigBuilder)
@@ -200,7 +205,7 @@ class TestTunnelManagerProcessManagement:
         """Test exception handling in start_tunnel_process."""
         tunnel_manager.registry.add_tunnel(http_tunnel)
 
-        with patch("frp_wrapper.tunnels.process.ConfigBuilder") as mock_config_builder:
+        with patch("frp_wrapper.client.tunnel.ConfigBuilder") as mock_config_builder:
             # Setup ConfigBuilder to raise exception
             mock_config_builder.side_effect = Exception("Config error")
 
@@ -219,7 +224,7 @@ class TestTunnelManagerProcessManagement:
         invalid_tunnel.local_port = 3000
 
         # Make isinstance checks fail for both HTTPTunnel and TCPTunnel
-        with patch("frp_wrapper.tunnel_process.isinstance", return_value=False):
+        with patch("frp_wrapper.client.tunnel.isinstance", return_value=False):
             result = tunnel_manager._process_manager.start_tunnel_process(
                 invalid_tunnel
             )

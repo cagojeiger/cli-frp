@@ -20,9 +20,9 @@ from ..common.utils import (
     validate_non_empty_string,
     validate_port,
 )
-from ..tunnels.models import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig
 from .config import ConfigBuilder
 from .process import ProcessManager
+from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig, TunnelManager
 
 if TYPE_CHECKING:
     pass
@@ -76,8 +76,6 @@ class FRPClient(ContextManagerMixin):
             default_domain=None,
             max_tunnels=10,
         )
-        from ..tunnels.manager import TunnelManager  # noqa: PLC0415
-
         self.tunnel_manager = TunnelManager(
             tunnel_config, frp_binary_path=self.binary_path
         )

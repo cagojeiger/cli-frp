@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from frp_wrapper.core.config import ConfigBuilder
+from frp_wrapper.client.config import ConfigBuilder
 
 
 class TestConfigBuilder:
@@ -196,7 +196,7 @@ class TestConfigBuilder:
 
     def test_context_manager_handles_cleanup_exception(self):
         """ConfigBuilder context manager should handle cleanup exceptions"""
-        with patch("frp_wrapper.config.ConfigBuilder.cleanup") as mock_cleanup:
+        with patch("frp_wrapper.client.config.ConfigBuilder.cleanup") as mock_cleanup:
             mock_cleanup.side_effect = Exception("Cleanup failed")
 
             with ConfigBuilder() as builder:

@@ -3,8 +3,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from frp_wrapper.client.client import FRPClient
 from frp_wrapper.common.exceptions import BinaryNotFoundError, ConnectionError
-from frp_wrapper.core.client import FRPClient
 
 
 @pytest.mark.integration
@@ -40,7 +40,7 @@ class TestFRPClientIntegration:
             assert "server_port = 8000" in content
             assert 'token = "test123"' in content
 
-    @patch("frp_wrapper.client.ProcessManager")
+    @patch("frp_wrapper.client.client.ProcessManager")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_connection_failure_handling(
         self, mock_find_binary, mock_process_manager
@@ -67,8 +67,8 @@ class TestFRPClientIntegration:
         """Test client context manager with mocked components"""
         mock_find_binary.return_value = "/usr/local/bin/frpc"
 
-        with patch("frp_wrapper.client.ProcessManager") as mock_pm:
-            with patch("frp_wrapper.client.ConfigBuilder") as mock_cb:
+        with patch("frp_wrapper.client.client.ProcessManager") as mock_pm:
+            with patch("frp_wrapper.client.client.ConfigBuilder") as mock_cb:
                 mock_process = Mock()
                 mock_pm.return_value = mock_process
                 mock_process.start.return_value = True
@@ -125,8 +125,8 @@ class TestFRPClientIntegration:
         """Test multiple connect/disconnect cycles work correctly"""
         mock_find_binary.return_value = "/usr/local/bin/frpc"
 
-        with patch("frp_wrapper.client.ProcessManager") as mock_pm:
-            with patch("frp_wrapper.client.ConfigBuilder") as mock_cb:
+        with patch("frp_wrapper.client.client.ProcessManager") as mock_pm:
+            with patch("frp_wrapper.client.client.ConfigBuilder") as mock_cb:
                 mock_process = Mock()
                 mock_pm.return_value = mock_process
                 mock_process.start.return_value = True

@@ -2,8 +2,12 @@
 
 from unittest.mock import Mock, patch
 
-from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel, TunnelConfig
-from frp_wrapper.tunnels.process import TunnelProcessManager
+from frp_wrapper.client.tunnel import (
+    HTTPTunnel,
+    TCPTunnel,
+    TunnelConfig,
+    TunnelProcessManager,
+)
 
 
 class TestTunnelProcessManager:
@@ -18,8 +22,8 @@ class TestTunnelProcessManager:
         assert manager._frp_binary_path == "/usr/bin/frpc"
         assert manager._processes == {}
 
-    @patch("frp_wrapper.tunnel_process.ProcessManager")
-    @patch("frp_wrapper.tunnel_process.ConfigBuilder")
+    @patch("frp_wrapper.client.tunnel.ProcessManager")
+    @patch("frp_wrapper.client.tunnel.ConfigBuilder")
     def test_start_tunnel_process_http(self, mock_config_builder, mock_process_manager):
         """Test starting process for HTTP tunnel."""
         config = TunnelConfig(server_host="test.example.com", auth_token="secret")
@@ -48,8 +52,8 @@ class TestTunnelProcessManager:
         )
         mock_builder_instance.add_http_proxy.assert_called_once()
 
-    @patch("frp_wrapper.tunnel_process.ProcessManager")
-    @patch("frp_wrapper.tunnel_process.ConfigBuilder")
+    @patch("frp_wrapper.client.tunnel.ProcessManager")
+    @patch("frp_wrapper.client.tunnel.ConfigBuilder")
     def test_start_tunnel_process_tcp(self, mock_config_builder, mock_process_manager):
         """Test starting process for TCP tunnel."""
         config = TunnelConfig(server_host="test.example.com")

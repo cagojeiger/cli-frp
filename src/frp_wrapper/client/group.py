@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Any
 
 from ..common.context_config import ResourceTracker, TunnelGroupConfig
 from ..common.exceptions import TunnelError
-from .models import BaseTunnel
+from .tunnel import BaseTunnel
 
 if TYPE_CHECKING:
-    from ..core.client import FRPClient
+    from .client import FRPClient
 
 logger = logging.getLogger(__name__)
 

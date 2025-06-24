@@ -68,27 +68,32 @@ uv build
 
 ### Core Components
 
-1. **Client Side (FRP Client Wrapper)**
-   - `FRPClient` (`core/client.py`): Main entry point, orchestrates all components
-   - `ProcessManager` (`core/process.py`): Manages frpc binary lifecycle
-   - `ConfigBuilder` (`core/config.py`): Generates TOML configuration
-   - `TunnelManager` (`tunnels/manager.py`): Manages tunnel lifecycle
+1. **Client Side** (`src/frp_wrapper/client/`)
+   - `FRPClient` (`client/client.py`): Main entry point, orchestrates all components
+   - `ProcessManager` (`client/process.py`): Manages frpc binary lifecycle
+   - `ConfigBuilder` (`client/config.py`): Generates TOML configuration
+   - `HTTPTunnel`/`TCPTunnel` (`client/tunnel.py`): Tunnel models with Pydantic
+   - `TunnelGroup` (`client/group.py`): Batch tunnel management
 
-2. **Server Side (FRP Server Wrapper)** - Checkpoint 6
+2. **Server Side** (`src/frp_wrapper/server/`)
    - `FRPServer` (`server/server.py`): Server management following FRPClient pattern
    - `ServerProcessManager` (`server/process.py`): Extends ProcessManager for frps
    - `ServerConfigBuilder` (`server/config.py`): Server-specific TOML generation
    - Same patterns as client but for frps binary
 
+3. **Common Components** (`src/frp_wrapper/common/`)
+   - `context.py`: Context managers for resource cleanup and timeouts
+   - `exceptions.py`: Custom exception hierarchy
+   - `logging.py`: Structured logging with structlog
+   - `utils.py`: Shared utilities
+
 ### Key Architectural Patterns
 
-#### Protocol Pattern for Circular Dependencies
-```python
-# tunnels/interfaces.py
-class TunnelManagerProtocol(Protocol):
-    def start_tunnel(self, tunnel_id: str) -> bool: ...
-    def stop_tunnel(self, tunnel_id: str) -> bool: ...
-```
+#### Clean Separation of Concerns
+- Client components handle frpc binary and tunnel management
+- Server components handle frps binary and server configuration
+- Common components provide shared functionality across both
+- All components use dependency injection and interfaces
 
 #### Pydantic Validation Throughout
 ```python
@@ -108,9 +113,10 @@ class ServerConfig(BaseModel):
 FRPClient/FRPServer
     ├── ConfigBuilder (TOML generation)
     ├── ProcessManager (binary lifecycle)
-    └── TunnelManager (tunnel management)
-        ├── HTTPTunnel/TCPTunnel (models)
-        └── PathRouter (conflict detection)
+    └── Tunnel Management
+        ├── HTTPTunnel/TCPTunnel (Pydantic models)
+        ├── TunnelGroup (batch operations)
+        └── Path-based routing via FRP locations
 ```
 
 ## Critical Implementation Details

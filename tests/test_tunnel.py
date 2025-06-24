@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import pytest
 from pydantic import ValidationError
 
-from frp_wrapper.tunnels.models import (
+from frp_wrapper.client.tunnel import (
     BaseTunnel,
     HTTPTunnel,
     TCPTunnel,

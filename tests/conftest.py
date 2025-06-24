@@ -73,7 +73,7 @@ def running_process_manager(temp_paths, mock_subprocess, mock_process):
     Returns:
         ProcessManager: Manager with running process
     """
-    from frp_wrapper.core.process import ProcessManager  # noqa: PLC0415
+    from frp_wrapper.client.process import ProcessManager  # noqa: PLC0415
 
     binary_path, config_path = temp_paths
     mock_subprocess.return_value = mock_process

@@ -2,8 +2,8 @@
 
 from typing import Any
 
+from ..client.process import ProcessManager
 from ..common.logging import get_logger
-from ..core.process import ProcessManager
 
 logger = get_logger(__name__)
 

@@ -2,9 +2,8 @@
 
 # High-level API
 from . import (
-    core,  # For test access to core.client, core.config, etc.
+    client,  # For test access to client components
     server,  # For test access to server components
-    tunnels,  # For test access to tunnels.manager, etc.
 )
 from .api import (
     create_tcp_tunnel,
@@ -13,6 +12,21 @@ from .api import (
     managed_tunnel,
     tunnel_group_context,
 )
+
+# Client functionality
+from .client import (
+    BaseTunnel,
+    ConfigBuilder,
+    FRPClient,
+    HTTPTunnel,
+    ProcessManager,
+    TCPTunnel,
+    TunnelConfig,
+    TunnelManager,
+    TunnelStatus,
+    TunnelType,
+)
+from .client.group import TunnelGroup, tunnel_group
 
 # Context management
 from .common.context import (
@@ -43,25 +57,8 @@ from .common.utils import (
     validate_port,
 )
 
-# Core functionality
-from .core.client import FRPClient
-from .core.config import ConfigBuilder
-
 # Server components
 from .server.server import FRPServer
-from .tunnels.group import TunnelGroup, tunnel_group
-
-# Tunnel management
-from .tunnels.manager import TunnelManager
-from .tunnels.models import (
-    BaseTunnel,
-    HTTPTunnel,
-    TCPTunnel,
-    TunnelConfig,
-    TunnelStatus,
-    TunnelType,
-)
-from .tunnels.process import TunnelProcessManager
 
 # Setup logging on package initialization
 setup_logging(level="INFO")
@@ -71,10 +68,6 @@ logger = get_logger(__name__)
 
 __version__ = "0.1.0"
 
-client = core.client
-config = core.config
-tunnel_manager = tunnels.manager
-tunnel_process = tunnels.process
 
 __all__ = [
     # High-level API
@@ -90,7 +83,6 @@ __all__ = [
     "FRPServer",
     # Tunnel management
     "TunnelManager",
-    "TunnelProcessManager",
     "TunnelConfig",
     "BaseTunnel",
     "HTTPTunnel",
@@ -99,6 +91,7 @@ __all__ = [
     "TunnelType",
     "TunnelGroup",
     "tunnel_group",
+    "ProcessManager",
     # Context management
     "NestedContextManager",
     "TimeoutContext",
@@ -120,11 +113,6 @@ __all__ = [
     "validate_non_empty_string",
     "mask_sensitive_data",
     "sanitize_log_data",
-    "core",
-    "server",
-    "tunnels",
     "client",
-    "config",
-    "tunnel_manager",
-    "tunnel_process",
+    "server",
 ]

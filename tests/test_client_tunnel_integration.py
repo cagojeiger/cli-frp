@@ -2,9 +2,15 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from frp_wrapper.core.client import FRPClient
-from frp_wrapper.tunnels.manager import TunnelManager, TunnelManagerError
-from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel, TunnelStatus, TunnelType
+from frp_wrapper.client.client import FRPClient
+from frp_wrapper.client.tunnel import (
+    HTTPTunnel,
+    TCPTunnel,
+    TunnelManager,
+    TunnelManagerError,
+    TunnelStatus,
+    TunnelType,
+)
 
 
 class TestFRPClientExposePathIntegration:
@@ -13,13 +19,11 @@ class TestFRPClientExposePathIntegration:
     @pytest.fixture
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
-        with (
-            patch("frp_wrapper.core.client.FRPClient.find_frp_binary") as mock_find,
-            patch("frp_wrapper.tunnels.manager.TunnelManager") as mock_tunnel_manager,
-        ):
+        with patch("frp_wrapper.client.client.FRPClient.find_frp_binary") as mock_find:
             mock_find.return_value = "/usr/local/bin/frpc"
-            mock_tunnel_manager.return_value = Mock(spec=TunnelManager)
             client = FRPClient("test.example.com", auth_token="test-token")
+            # Replace tunnel_manager with a mock
+            client.tunnel_manager = Mock(spec=TunnelManager)
             return client
 
     def test_expose_path_creates_http_tunnel(self, mock_client):
@@ -27,7 +31,9 @@ class TestFRPClientExposePathIntegration:
         expected_tunnel = HTTPTunnel(
             id="http-3000-myapp", local_port=3000, path="myapp"
         )
-        mock_client.tunnel_manager.create_http_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_http_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         tunnel = mock_client.expose_path(3000, "myapp")
 
@@ -54,7 +60,9 @@ class TestFRPClientExposePathIntegration:
             path="api",
             custom_domains=["api.example.com", "api.test.com"],
         )
-        mock_client.tunnel_manager.create_http_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_http_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         tunnel = mock_client.expose_path(
             8080, "api", custom_domains=["api.example.com", "api.test.com"]
@@ -80,7 +88,9 @@ class TestFRPClientExposePathIntegration:
             strip_path=False,
             websocket=False,
         )
-        mock_client.tunnel_manager.create_http_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_http_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         tunnel = mock_client.expose_path(
             5000, "webapp", strip_path=False, websocket=False
@@ -103,7 +113,9 @@ class TestFRPClientExposePathIntegration:
         tunnel1 = HTTPTunnel(id="http-3000-app1", local_port=3000, path="app1")
         tunnel2 = HTTPTunnel(id="http-4000-app2", local_port=4000, path="app2")
 
-        mock_client.tunnel_manager.create_http_tunnel.side_effect = [tunnel1, tunnel2]
+        mock_client.tunnel_manager.create_http_tunnel = Mock(
+            side_effect=[tunnel1, tunnel2]
+        )
 
         result1 = mock_client.expose_path(3000, "app1")
         result2 = mock_client.expose_path(4000, "app2")
@@ -130,8 +142,8 @@ class TestFRPClientExposePathIntegration:
 
     def test_expose_path_handles_tunnel_manager_error(self, mock_client):
         """Test that expose_path handles TunnelManager errors properly."""
-        mock_client.tunnel_manager.create_http_tunnel.side_effect = TunnelManagerError(
-            "Registry full"
+        mock_client.tunnel_manager.create_http_tunnel = Mock(
+            side_effect=TunnelManagerError("Registry full")
         )
 
         with pytest.raises(TunnelManagerError, match="Registry full"):
@@ -143,8 +155,10 @@ class TestFRPClientExposePathIntegration:
         expected_tunnel = HTTPTunnel(
             id="http-3000-autostart", local_port=3000, path="autostart"
         )
-        mock_client.tunnel_manager.create_http_tunnel.return_value = expected_tunnel
-        mock_client.tunnel_manager.start_tunnel.return_value = True
+        mock_client.tunnel_manager.create_http_tunnel = Mock(
+            return_value=expected_tunnel
+        )
+        mock_client.tunnel_manager.start_tunnel = Mock(return_value=True)
 
         mock_client.expose_path(3000, "autostart", auto_start=True)
 
@@ -161,7 +175,9 @@ class TestFRPClientExposePathIntegration:
         expected_tunnel = HTTPTunnel(
             id="http-3000-nostart", local_port=3000, path="nostart"
         )
-        mock_client.tunnel_manager.create_http_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_http_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         mock_client.expose_path(3000, "nostart", auto_start=True)
 
@@ -178,7 +194,9 @@ class TestFRPClientExposePathIntegration:
             strip_path=False,
             websocket=True,
         )
-        mock_client.tunnel_manager.create_http_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_http_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         tunnel = mock_client.expose_path(
             8080,
@@ -204,19 +222,19 @@ class TestFRPClientExposeTCPIntegration:
     @pytest.fixture
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
-        with (
-            patch("frp_wrapper.core.client.FRPClient.find_frp_binary") as mock_find,
-            patch("frp_wrapper.tunnels.manager.TunnelManager") as mock_tunnel_manager,
-        ):
+        with patch("frp_wrapper.client.client.FRPClient.find_frp_binary") as mock_find:
             mock_find.return_value = "/usr/local/bin/frpc"
-            mock_tunnel_manager.return_value = Mock(spec=TunnelManager)
             client = FRPClient("test.example.com", auth_token="test-token")
+            # Replace tunnel_manager with a mock
+            client.tunnel_manager = Mock(spec=TunnelManager)
             return client
 
     def test_expose_tcp_creates_tcp_tunnel(self, mock_client):
         """Test that expose_tcp creates and registers a TCP tunnel."""
         expected_tunnel = TCPTunnel(id="tcp-3000", local_port=3000)
-        mock_client.tunnel_manager.create_tcp_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         tunnel = mock_client.expose_tcp(3000)
 
@@ -234,7 +252,9 @@ class TestFRPClientExposeTCPIntegration:
         expected_tunnel = TCPTunnel(
             id="tcp-3000-8080", local_port=3000, remote_port=8080
         )
-        mock_client.tunnel_manager.create_tcp_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         tunnel = mock_client.expose_tcp(3000, remote_port=8080)
 
@@ -251,7 +271,9 @@ class TestFRPClientExposeTCPIntegration:
         tunnel1 = TCPTunnel(id="tcp-3000", local_port=3000)
         tunnel2 = TCPTunnel(id="tcp-4000", local_port=4000)
 
-        mock_client.tunnel_manager.create_tcp_tunnel.side_effect = [tunnel1, tunnel2]
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(
+            side_effect=[tunnel1, tunnel2]
+        )
 
         result1 = mock_client.expose_tcp(3000)
         result2 = mock_client.expose_tcp(4000)
@@ -263,7 +285,7 @@ class TestFRPClientExposeTCPIntegration:
     def test_expose_tcp_with_remote_port_in_id(self, mock_client):
         """Test that expose_tcp includes remote port in tunnel ID when specified."""
         tunnel = TCPTunnel(id="tcp-3000-9000", local_port=3000, remote_port=9000)
-        mock_client.tunnel_manager.create_tcp_tunnel.return_value = tunnel
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(return_value=tunnel)
 
         result = mock_client.expose_tcp(3000, remote_port=9000)
 
@@ -291,8 +313,8 @@ class TestFRPClientExposeTCPIntegration:
 
     def test_expose_tcp_handles_tunnel_manager_error(self, mock_client):
         """Test that expose_tcp handles TunnelManager errors properly."""
-        mock_client.tunnel_manager.create_tcp_tunnel.side_effect = TunnelManagerError(
-            "Port conflict"
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(
+            side_effect=TunnelManagerError("Port conflict")
         )
 
         with pytest.raises(TunnelManagerError, match="Port conflict"):
@@ -302,8 +324,10 @@ class TestFRPClientExposeTCPIntegration:
         """Test that expose_tcp auto-starts tunnel if client is connected."""
         mock_client._connected = True
         expected_tunnel = TCPTunnel(id="tcp-3000-1234", local_port=3000)
-        mock_client.tunnel_manager.create_tcp_tunnel.return_value = expected_tunnel
-        mock_client.tunnel_manager.start_tunnel.return_value = True
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(
+            return_value=expected_tunnel
+        )
+        mock_client.tunnel_manager.start_tunnel = Mock(return_value=True)
 
         mock_client.expose_tcp(3000, auto_start=True)
 
@@ -316,7 +340,9 @@ class TestFRPClientExposeTCPIntegration:
         """Test that expose_tcp skips auto-start if client not connected."""
         mock_client._connected = False
         expected_tunnel = TCPTunnel(id="tcp-3000-nostart", local_port=3000)
-        mock_client.tunnel_manager.create_tcp_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         mock_client.expose_tcp(3000, auto_start=True)
 
@@ -328,7 +354,9 @@ class TestFRPClientExposeTCPIntegration:
         expected_tunnel = TCPTunnel(
             id="tcp-8080-9090", local_port=8080, remote_port=9090
         )
-        mock_client.tunnel_manager.create_tcp_tunnel.return_value = expected_tunnel
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(
+            return_value=expected_tunnel
+        )
 
         tunnel = mock_client.expose_tcp(8080, remote_port=9090)
 
@@ -345,13 +373,11 @@ class TestFRPClientTunnelLifecycleIntegration:
     @pytest.fixture
     def mock_client(self):
         """Create FRPClient with mocked dependencies."""
-        with (
-            patch("frp_wrapper.core.client.FRPClient.find_frp_binary") as mock_find,
-            patch("frp_wrapper.tunnels.manager.TunnelManager") as mock_tunnel_manager,
-        ):
+        with patch("frp_wrapper.client.client.FRPClient.find_frp_binary") as mock_find:
             mock_find.return_value = "/usr/local/bin/frpc"
-            mock_tunnel_manager.return_value = Mock(spec=TunnelManager)
             client = FRPClient("test.example.com", auth_token="test-token")
+            # Replace tunnel_manager with a mock
+            client.tunnel_manager = Mock(spec=TunnelManager)
             return client
 
     def test_client_tunnel_manager_integration(self, mock_client):
@@ -361,8 +387,8 @@ class TestFRPClientTunnelLifecycleIntegration:
         http_tunnel = HTTPTunnel(id="test-http", local_port=3000, path="test")
         tcp_tunnel = TCPTunnel(id="test-tcp", local_port=4000)
 
-        mock_client.tunnel_manager.create_http_tunnel.return_value = http_tunnel
-        mock_client.tunnel_manager.create_tcp_tunnel.return_value = tcp_tunnel
+        mock_client.tunnel_manager.create_http_tunnel = Mock(return_value=http_tunnel)
+        mock_client.tunnel_manager.create_tcp_tunnel = Mock(return_value=tcp_tunnel)
 
         result_http = mock_client.expose_path(3000, "test")
         result_tcp = mock_client.expose_tcp(4000)
@@ -383,7 +409,9 @@ class TestFRPClientTunnelLifecycleIntegration:
             ),
             TCPTunnel(id="active-tcp", local_port=4000, status=TunnelStatus.CONNECTED),
         ]
-        mock_client.tunnel_manager.list_active_tunnels.return_value = active_tunnels
+        mock_client.tunnel_manager.list_active_tunnels = Mock(
+            return_value=active_tunnels
+        )
 
         result = mock_client.list_active_tunnels()
 
@@ -400,7 +428,7 @@ class TestFRPClientTunnelLifecycleIntegration:
             "path": "myapp",
             "status": "connected",
         }
-        mock_client.tunnel_manager.get_tunnel_info.return_value = tunnel_info
+        mock_client.tunnel_manager.get_tunnel_info = Mock(return_value=tunnel_info)
 
         result = mock_client.get_tunnel_info("test-tunnel")
 
@@ -411,7 +439,7 @@ class TestFRPClientTunnelLifecycleIntegration:
 
     def test_client_starts_tunnel(self, mock_client):
         """Test that client can start tunnels through tunnel manager."""
-        mock_client.tunnel_manager.start_tunnel.return_value = True
+        mock_client.tunnel_manager.start_tunnel = Mock(return_value=True)
 
         result = mock_client.start_tunnel("test-tunnel")
 
@@ -420,7 +448,7 @@ class TestFRPClientTunnelLifecycleIntegration:
 
     def test_client_stops_tunnel(self, mock_client):
         """Test that client can stop tunnels through tunnel manager."""
-        mock_client.tunnel_manager.stop_tunnel.return_value = True
+        mock_client.tunnel_manager.stop_tunnel = Mock(return_value=True)
 
         result = mock_client.stop_tunnel("test-tunnel")
 
@@ -430,7 +458,7 @@ class TestFRPClientTunnelLifecycleIntegration:
     def test_client_removes_tunnel(self, mock_client):
         """Test that client can remove tunnels through tunnel manager."""
         removed_tunnel = HTTPTunnel(id="removed", local_port=3000, path="removed")
-        mock_client.tunnel_manager.remove_tunnel.return_value = removed_tunnel
+        mock_client.tunnel_manager.remove_tunnel = Mock(return_value=removed_tunnel)
 
         result = mock_client.remove_tunnel("removed")
 
@@ -439,7 +467,7 @@ class TestFRPClientTunnelLifecycleIntegration:
 
     def test_client_shutdown_all_tunnels(self, mock_client):
         """Test that client can shutdown all tunnels through tunnel manager."""
-        mock_client.tunnel_manager.shutdown_all.return_value = True
+        mock_client.tunnel_manager.shutdown_all = Mock(return_value=True)
 
         result = mock_client.shutdown_all_tunnels()
 

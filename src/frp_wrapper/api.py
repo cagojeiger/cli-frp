@@ -7,10 +7,9 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
+from .client import FRPClient, TunnelConfig, TunnelManager
+from .client.group import TunnelGroup, TunnelGroupConfig
 from .common.logging import get_logger
-from .core.client import FRPClient
-from .tunnels import TunnelConfig, TunnelManager
-from .tunnels.group import TunnelGroup, TunnelGroupConfig
 
 if TYPE_CHECKING:
     pass

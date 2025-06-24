@@ -2,10 +2,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from frp_wrapper.client.group import TunnelGroup, tunnel_group
+from frp_wrapper.client.tunnel import HTTPTunnel, TCPTunnel
 from frp_wrapper.common.context_config import TunnelGroupConfig
 from frp_wrapper.common.exceptions import TunnelError
-from frp_wrapper.tunnels.group import TunnelGroup, tunnel_group
-from frp_wrapper.tunnels.models import HTTPTunnel, TCPTunnel
 
 
 class TestTunnelGroup:
@@ -249,7 +249,7 @@ class TestTunnelGroup:
         mock_tunnel.manager = Mock()
         mock_tunnel.manager.stop_tunnel.side_effect = Exception("Stop failed")
 
-        with patch("frp_wrapper.tunnels.group.logger") as mock_logger:
+        with patch("frp_wrapper.client.group.logger") as mock_logger:
             group._cleanup_tunnel(mock_tunnel)
             mock_logger.error.assert_called_once()
 
@@ -276,7 +276,7 @@ class TestTunnelGroup:
 
         group.tunnels = [mock_tunnel]
 
-        with patch("frp_wrapper.tunnels.group.logger") as mock_logger:
+        with patch("frp_wrapper.client.group.logger") as mock_logger:
             result = group.start_all()
 
             assert result is False
@@ -292,7 +292,7 @@ class TestTunnelGroup:
 
         group._resource_tracker.register_resource("test", "resource", failing_cleanup)
 
-        with patch("frp_wrapper.tunnels.group.logger") as mock_logger:
+        with patch("frp_wrapper.client.group.logger") as mock_logger:
             with group:
                 pass
 
@@ -315,7 +315,7 @@ class TestTunnelGroup:
             "test2", "resource2", failing_cleanup_2
         )
 
-        with patch("frp_wrapper.tunnels.group.logger") as mock_logger:
+        with patch("frp_wrapper.client.group.logger") as mock_logger:
             with group:
                 pass
 
