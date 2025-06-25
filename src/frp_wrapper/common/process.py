@@ -7,8 +7,8 @@ from pathlib import Path
 from types import TracebackType
 from typing import Literal
 
-from ..common.exceptions import BinaryNotFoundError, ProcessError
-from ..common.logging import get_logger
+from .exceptions import BinaryNotFoundError, ProcessError
+from .logging import get_logger
 
 logger = get_logger(__name__)
 

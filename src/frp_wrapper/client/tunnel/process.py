@@ -2,8 +2,8 @@
 
 import logging
 
+from ...common.process import ProcessManager
 from ..config import ConfigBuilder
-from ..process import ProcessManager
 from .config import TunnelConfig
 from .models import BaseTunnel, HTTPTunnel, TCPTunnel
 

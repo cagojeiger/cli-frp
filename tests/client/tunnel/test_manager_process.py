@@ -5,7 +5,6 @@ from unittest.mock import Mock, patch
 import pytest
 
 from frp_wrapper.client.config import ConfigBuilder
-from frp_wrapper.client.process import ProcessManager
 from frp_wrapper.client.tunnel import (
     HTTPTunnel,
     TCPTunnel,
@@ -13,6 +12,7 @@ from frp_wrapper.client.tunnel import (
     TunnelManager,
     TunnelStatus,
 )
+from frp_wrapper.common.process import ProcessManager
 
 
 class TestTunnelManagerProcessManagement:

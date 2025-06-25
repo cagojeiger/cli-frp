@@ -1,13 +1,15 @@
 """Custom exceptions for tunnel management."""
 
+from ...common.exceptions import TunnelError
 
-class TunnelRegistryError(Exception):
+
+class TunnelRegistryError(TunnelError):
     """Exception raised for tunnel registry operations."""
 
     pass
 
 
-class TunnelManagerError(Exception):
+class TunnelManagerError(TunnelError):
     """Exception raised for tunnel manager operations."""
 
     pass

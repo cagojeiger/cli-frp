@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
-from frp_wrapper.client.process import ProcessManager
+from frp_wrapper.common.process import ProcessManager
 from frp_wrapper.server.process import ServerProcessManager
 
 

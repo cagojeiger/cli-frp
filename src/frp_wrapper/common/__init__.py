@@ -8,6 +8,7 @@ from .exceptions import (
     ProcessError,
 )
 from .logging import get_logger, setup_logging
+from .process import ProcessManager
 from .utils import (
     MAX_PORT,
     MIN_PORT,
@@ -20,6 +21,8 @@ from .utils import (
 )
 
 __all__ = [
+    # Process management
+    "ProcessManager",
     # Exceptions
     "FRPWrapperError",
     "BinaryNotFoundError",

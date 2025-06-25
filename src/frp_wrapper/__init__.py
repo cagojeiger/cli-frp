@@ -19,7 +19,6 @@ from .client import (
     ConfigBuilder,
     FRPClient,
     HTTPTunnel,
-    ProcessManager,
     TCPTunnel,
     TunnelConfig,
     TunnelManager,
@@ -50,6 +49,7 @@ from .common.exceptions import (
     ProcessError,
 )
 from .common.logging import get_logger, setup_logging
+from .common.process import ProcessManager
 from .common.utils import (
     mask_sensitive_data,
     sanitize_log_data,

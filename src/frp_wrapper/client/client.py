@@ -15,13 +15,13 @@ from ..common.exceptions import (
     ProcessError,
 )
 from ..common.logging import get_logger
+from ..common.process import ProcessManager
 from ..common.utils import (
     sanitize_log_data,
     validate_non_empty_string,
     validate_port,
 )
 from .config import ConfigBuilder
-from .process import ProcessManager
 from .tunnel import BaseTunnel, HTTPTunnel, TCPTunnel, TunnelConfig, TunnelManager
 
 if TYPE_CHECKING:

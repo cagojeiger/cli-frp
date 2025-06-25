@@ -69,7 +69,7 @@ class TestFRPClient:
 
     @patch("frp_wrapper.client.client.ConfigBuilder")
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_connects_successfully(
         self,
@@ -100,7 +100,7 @@ class TestFRPClient:
 
     @patch("frp_wrapper.client.client.ConfigBuilder")
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_connect_when_already_connected(
         self,
@@ -131,7 +131,7 @@ class TestFRPClient:
 
     @patch("frp_wrapper.client.client.ConfigBuilder")
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_handles_process_start_failure(
         self,
@@ -156,7 +156,7 @@ class TestFRPClient:
             client.connect()
 
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_handles_connection_failure(
         self, mock_find_binary, mock_validate_paths, mock_process_manager
@@ -175,7 +175,7 @@ class TestFRPClient:
         assert not client.is_connected()
 
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_handles_authentication_failure(
         self, mock_find_binary, mock_validate_paths, mock_process_manager
@@ -195,7 +195,7 @@ class TestFRPClient:
             client.connect()
 
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_disconnects_successfully(
         self, mock_find_binary, mock_validate_paths, mock_process_manager
@@ -231,7 +231,7 @@ class TestFRPClient:
         assert not client.is_connected()
 
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_disconnect_handles_exception(
         self, mock_find_binary, mock_validate_paths, mock_process_manager
@@ -254,7 +254,7 @@ class TestFRPClient:
         assert not client.is_connected()  # Should still mark as disconnected
 
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     def test_client_context_manager(
         self, mock_find_binary, mock_validate_paths, mock_process_manager
@@ -280,7 +280,7 @@ class TestFRPClient:
         mock_find_binary.return_value = "/usr/local/bin/frpc"
 
         with patch("frp_wrapper.client.client.ProcessManager") as mock_process_manager:
-            with patch("frp_wrapper.client.process.ProcessManager._validate_paths"):
+            with patch("frp_wrapper.common.process.ProcessManager._validate_paths"):
                 mock_process = Mock()
                 mock_process_manager.return_value = mock_process
                 mock_process.start.return_value = True
@@ -306,7 +306,7 @@ class TestFRPClient:
         mock_find_binary.return_value = "/usr/local/bin/frpc"
 
         with patch("frp_wrapper.client.client.ProcessManager") as mock_process_manager:
-            with patch("frp_wrapper.client.process.ProcessManager._validate_paths"):
+            with patch("frp_wrapper.common.process.ProcessManager._validate_paths"):
                 mock_process = Mock()
                 mock_process_manager.return_value = mock_process
                 mock_process.start.return_value = True
@@ -360,7 +360,7 @@ class TestFRPClient:
 class TestFRPClientIntegration:
     @patch("frp_wrapper.client.FRPClient.find_frp_binary")
     @patch("frp_wrapper.client.client.ProcessManager")
-    @patch("frp_wrapper.client.process.ProcessManager._validate_paths")
+    @patch("frp_wrapper.common.process.ProcessManager._validate_paths")
     def test_real_connection_no_server(
         self, mock_validate_paths, mock_process_manager, mock_find_binary
     ):

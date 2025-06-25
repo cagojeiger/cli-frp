@@ -1,9 +1,9 @@
 """FRP Client components."""
 
+from ..common.process import ProcessManager
 from .client import FRPClient
 from .config import ConfigBuilder
 from .group import TunnelGroup, tunnel_group
-from .process import ProcessManager
 from .tunnel import (
     BaseTunnel,
     HTTPTunnel,
