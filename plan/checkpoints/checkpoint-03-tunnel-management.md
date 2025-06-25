@@ -1,5 +1,8 @@
 # Checkpoint 3: Tunnel Management with Pydantic (TDD Approach)
 
+## Status: ✅ Completed
+Implementation finished and tested with 95%+ coverage.
+
 ## Overview
 TDD와 Pydantic v2를 활용하여 간단하고 타입 안전한 터널 관리 시스템을 구현합니다. Pydantic BaseModel을 사용해 강력한 데이터 검증과 직렬화를 제공합니다.
 

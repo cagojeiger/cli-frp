@@ -1,5 +1,8 @@
 # Checkpoint 1: Process Manager (TDD Approach)
 
+## Status: ✅ Completed
+Implementation finished and tested with 95%+ coverage.
+
 ## Overview
 TDD를 적용하여 FRP 바이너리 프로세스를 관리하는 간단하고 안정적인 ProcessManager 클래스를 구현합니다.
 

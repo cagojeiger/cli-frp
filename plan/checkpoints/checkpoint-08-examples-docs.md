@@ -1,5 +1,9 @@
 # Checkpoint 8: Comprehensive Examples & Documentation (TDD Approach)
 
+## Status: 📋 Planned
+This checkpoint is planned but not yet implemented.
+Priority may change based on K8s integration progress.
+
 ## Overview
 TDD와 Pydantic v2를 활용한 **클라이언트 + 서버 통합 예제** 코드와 완전한 문서를 작성합니다. 실용적인 사용 사례와 프로덕션 품질의 문서를 제공하여 사용자가 쉽게 시작할 수 있도록 합니다.
 

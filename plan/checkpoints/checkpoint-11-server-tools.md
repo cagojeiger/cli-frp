@@ -1,5 +1,9 @@
 # Checkpoint 11: FRP 서버 관리 도구 (CLI & TUI)
 
+## Status: 📋 Planned
+This checkpoint is planned but not yet implemented.
+Priority may change based on K8s integration progress.
+
 ## 개요
 FRP 서버를 효율적으로 관리하고 모니터링할 수 있는 CLI 및 TUI 도구를 구현합니다. 서버 설치부터 실시간 모니터링, 클라이언트 관리까지 전체 서버 라이프사이클을 지원합니다.
 

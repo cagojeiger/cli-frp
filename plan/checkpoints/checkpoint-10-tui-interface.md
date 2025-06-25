@@ -1,5 +1,9 @@
 # Checkpoint 10: k9s 스타일 TUI 인터페이스
 
+## Status: 📋 Planned
+This checkpoint is planned but not yet implemented.
+Priority may change based on K8s integration progress.
+
 ## 개요
 k9s의 직관적인 인터페이스와 Textual 프레임워크를 결합하여 FRP 터널을 시각적으로 관리할 수 있는 고급 TUI(Terminal User Interface)를 구현합니다. 실시간 모니터링, 키보드 기반 네비게이션, 그리고 풍부한 시각적 피드백을 제공합니다.
 

@@ -1,5 +1,9 @@
 # Checkpoint Improvements for AI Implementation
 
+## Status: 📋 Planned
+This checkpoint is planned but not yet implemented.
+Priority may change based on K8s integration progress.
+
 ## Checkpoint 1: Process Manager ✅ (Completed)
 
 ### Success Criteria (Verified)

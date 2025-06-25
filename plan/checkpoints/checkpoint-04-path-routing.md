@@ -1,5 +1,8 @@
 # Checkpoint 4: Path-Based Routing with Pydantic (TDD Approach)
 
+## Status: ✅ Completed
+Implementation finished and tested with 95%+ coverage.
+
 ## Overview
 TDD와 Pydantic v2를 활용하여 FRP의 네이티브 `locations` 기능을 사용한 강력한 경로 기반 라우팅 시스템을 구현합니다. HTTP 터널을 경로별로 노출하는 핵심 기능을 제공합니다.
 

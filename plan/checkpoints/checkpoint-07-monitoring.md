@@ -1,5 +1,9 @@
 # Checkpoint 7: Unified Monitoring & Observability (TDD Approach)
 
+## Status: 📋 Planned
+This checkpoint is planned but not yet implemented.
+Priority may change based on K8s integration progress.
+
 ## Overview
 TDD와 Pydantic v2를 활용하여 **클라이언트 터널과 FRP 서버 전체**에 대한 통합 모니터링, 로깅, 메트릭 수집 시스템을 구현합니다. 구조화된 로깅과 강력한 타입 안전성을 제공합니다.
 

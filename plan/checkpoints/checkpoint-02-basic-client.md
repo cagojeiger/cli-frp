@@ -1,5 +1,8 @@
 # Checkpoint 2: Basic Client API (TDD Approach)
 
+## Status: ✅ Completed
+Implementation finished and tested with 95%+ coverage.
+
 ## Overview
 TDD를 사용하여 사용자 친화적인 FRPClient 클래스를 구현합니다. 간단하고 직관적인 Python API를 제공하며 FRP 서버 연결을 관리합니다.
 

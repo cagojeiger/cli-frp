@@ -1,5 +1,9 @@
 # Checkpoint 9: 비개발자 친화적 CLI 인터페이스
 
+## Status: 📋 Planned
+This checkpoint is planned but not yet implemented.
+Priority may change based on K8s integration progress.
+
 ## 개요
 비개발자도 쉽게 사용할 수 있는 직관적인 CLI 인터페이스를 구현합니다. 복잡한 설정 없이 간단한 명령어로 로컬 서비스를 인터넷에 공유할 수 있도록 합니다.
 

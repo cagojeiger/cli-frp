@@ -1,15 +1,30 @@
 # FRP Python Wrapper 프로젝트 계획
 
-## 프로젝트 개요
+## 프로젝트 진화
+초기: Python FRP 래퍼 → 현재: **K8s 네이티브 분산 서비스 프록시 시스템**
 
-Python에서 FRP(Fast Reverse Proxy)를 쉽게 사용할 수 있도록 하는 래퍼 라이브러리입니다. 특히 로컬 서비스를 고정 도메인의 서브패스로 노출하는 기능에 중점을 둡니다.
+## 현재 상태 (2024년 12월)
 
-## 프로젝트 목표
+### Checkpoint 진행 상황
+- **✅ Completed (1-6)**: 기본 FRP Python 래퍼 구현 완료
+  - ProcessManager, FRPClient, TunnelManager
+  - Context Manager, Pydantic 모델
+  - 95%+ 테스트 커버리지 달성
 
-1. **쉬운 사용성**: Python 개발자가 터널링을 직관적으로 사용
-2. **서브패스 라우팅**: `https://tunnel.example.com/myapp/` 형태로 서비스 노출
-3. **프로그래밍 방식 제어**: 설정 파일이 아닌 코드로 터널 관리
-4. **자동 리소스 관리**: Context Manager를 통한 안전한 터널 생명주기 관리
+- **🚧 In Progress (12)**: K8s 분산 시스템
+  - FRP + K8s + Python 통합 아키텍처
+  - 범용 분산 서비스 프록시 (Ollama LLM은 하나의 사용 사례)
+  - 기술 연구 문서 작성 중 (docs/research/, docs/k8s/)
+
+- **📋 Planned (7-11)**: 우선순위 재검토 필요
+  - 모니터링, CLI/TUI, 문서화 등
+  - K8s 통합 완료 후 필요성 재평가
+
+## 핵심 설계 결정
+
+1. **FRP의 역할**: 순수 터널링 인프라로만 활용 (TCP 그룹 로드 밸런싱)
+2. **K8s의 역할**: 오케스트레이션, 서비스 디스커버리, 라이프사이클 관리
+3. **Python Wrapper**: 두 시스템을 연결하는 브릿지, 설정 자동화
 
 ## 핵심 기능
 
@@ -63,22 +78,27 @@ prototype-frp/
 - 서버 설정 도구
 - 모니터링 대시보드
 
-## 달성된 성공 기준
+## K8s 통합 로드맵 (Checkpoint 12)
 
-1. **기능적 완성도** ✅
-   - ✅ 모든 핵심 기능 구현 완료
-   - ✅ 95% 이상 테스트 커버리지 달성
-   - ✅ 주요 사용 사례 예제 제공
+### Phase 1: 기본 K8s 배포 (1-2주)
+- Docker 이미지 생성
+- K8s 매니페스트 (Deployment, Service, ConfigMap)
+- 기본 frps/frpc 배포
 
-2. **사용성** ✅
-   - ✅ 한 줄로 터널 생성 가능: `create_tunnel("domain", port, "/path")`
-   - ✅ 직관적인 객체지향 API
-   - ✅ 명확한 에러 메시지와 타입 힌트
+### Phase 2: CRD & Operator (2-4주)
+- DistributedService CRD 구현
+- Python Kopf 기반 Operator
+- 선언적 서비스 관리
 
-3. **안정성** ✅
-   - ✅ Context Manager로 자동 리소스 정리
-   - ✅ Pydantic으로 데이터 검증
-   - ✅ 포괄적인 예외 처리
+### Phase 3: 자동화 (1-2개월)
+- 서비스 디스커버리
+- mTLS 인증서 관리
+- 동적 설정 업데이트
+
+### Phase 4: 프로덕션 (지속적)
+- 모니터링 & 메트릭
+- HA 구성
+- 성능 최적화
 
 ## 참고 문서
 

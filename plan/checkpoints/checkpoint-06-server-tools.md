@@ -1,5 +1,8 @@
 # Checkpoint 6: FRP Server Wrapper (TDD Approach)
 
+## Status: ✅ Completed
+Implementation finished and tested with 95%+ coverage.
+
 ## Overview
 frps(FRP 서버) 바이너리를 frpc와 동일한 패턴으로 래핑합니다. 기존 ProcessManager와 ConfigBuilder 패턴을 재사용하여 일관성 있는 아키텍처를 구현합니다.
 
