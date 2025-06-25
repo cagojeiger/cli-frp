@@ -4,11 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FRP Python Wrapper is a self-hostable tunneling solution (like ngrok) that leverages FRP's native **locations** feature for path-based routing (https://example.com/myapp/). The design emphasizes:
+FRP Python Wrapper is evolving into a **Kubernetes-native distributed service proxy system** that leverages FRP for secure tunneling while providing enterprise-grade orchestration. The project currently provides a Python wrapper for FRP with plans to expand into K8s-native architecture.
+
+### Core Vision
+- **Python FRP Wrapper** (Current): Clean Python API for FRP with Pydantic models and context managers
+- **K8s-Native Architecture** (Planned): Kubernetes deployment with CRDs, Operators, and native patterns
+- **Distributed Service Proxy** (Future): General-purpose proxy supporting various services
+- **Enterprise Security** (Roadmap): mTLS by default, Zero Trust networking principles
+
+### Design Principles
 - **Pythonic Design**: Clean, readable classes and intuitive APIs following Python conventions
-- **Test-Driven Development**: Comprehensive test coverage with tests written before implementation
-- **Simple Architecture**: Clear, minimal structure focusing on core functionality
-- **Native FRP Features**: Direct use of FRP's locations parameter for path-based routing
+- **Test-Driven Development**: Comprehensive test coverage (95%+ enforced, currently 96%)
+- **Separation of Concerns**: Clear module boundaries and single responsibility
+- **Type Safety**: Strict mypy checking with Pydantic validation throughout
 
 ## Development Commands
 
@@ -22,21 +30,15 @@ uv run pre-commit install
 
 # Create new virtual environment if needed
 uv venv
-
-# Fix VIRTUAL_ENV conflicts
-unset VIRTUAL_ENV
-# Or use direct Python path: .venv/bin/python -m pytest
 ```
 
 ### Running Tests
 ```bash
 # Run all tests with coverage
 uv run pytest
-# Or if VIRTUAL_ENV conflicts: .venv/bin/python -m pytest
 
-# Run specific test file (note new test directory structure)
+# Run specific test file
 uv run pytest tests/client/test_client.py -v
-uv run pytest tests/client/tunnel/test_models.py -v
 
 # Run specific test method
 uv run pytest tests/client/test_process.py::TestProcessManager::test_process_manager_starts_process -v
@@ -80,16 +82,20 @@ src/frp_wrapper/
 │   │   └── routing/       # Path-based routing logic
 │   ├── client.py    # FRPClient main entry point
 │   ├── config.py    # ConfigBuilder for TOML generation
-│   ├── process.py   # ProcessManager for frpc binary
 │   └── group.py     # TunnelGroup for batch operations
 ├── server/          # Server-side components (frps wrapper)
 │   ├── server.py    # FRPServer main entry point
 │   ├── config.py    # ServerConfigBuilder with dashboard support
 │   └── process.py   # ServerProcessManager
-└── common/          # Shared components
-    ├── context.py   # Context managers and timeout handling
-    ├── exceptions.py # Exception hierarchy
-    └── logging.py   # Structured logging setup
+├── common/          # Shared components
+│   ├── context.py   # Context managers and timeout handling
+│   ├── context_config.py # Configuration for context managers
+│   ├── exceptions.py # Exception hierarchy
+│   ├── logging.py   # Structured logging setup
+│   ├── process.py   # ProcessManager for frpc/frps binary lifecycle
+│   └── utils.py     # Port allocation and utilities
+├── api.py           # High-level API functions (create_tunnel, etc.)
+└── __init__.py      # Package exports
 
 tests/               # Mirrors src structure
 ├── client/
@@ -103,7 +109,6 @@ tests/               # Mirrors src structure
 
 1. **Client Side** (`src/frp_wrapper/client/`)
    - `FRPClient`: Main entry point, orchestrates all components
-   - `ProcessManager`: Manages frpc binary lifecycle
    - `ConfigBuilder`: Generates TOML configuration
    - `TunnelManager`: High-level tunnel management with registry
    - `HTTPTunnel`/`TCPTunnel`: Immutable Pydantic models
@@ -116,10 +121,16 @@ tests/               # Mirrors src structure
    - `DashboardConfig`: Pydantic model with password validation
 
 3. **Common Components** (`src/frp_wrapper/common/`)
+   - `ProcessManager`: Unified process management for frpc/frps binaries
    - `TimeoutContext`: Configurable timeout strategies
    - `FRPWrapperError`: Base exception with specific subclasses
    - `get_logger()`: Structured logging factory
    - `find_available_port()`: Port allocation utilities
+
+4. **High-Level API** (`src/frp_wrapper/api.py`)
+   - `create_tunnel()`: Simple one-line tunnel creation
+   - `managed_tunnel()`: Context manager for tunnels
+   - `create_tcp_tunnel()`: TCP-specific tunnel creation
 
 ### Key Architectural Patterns
 
@@ -171,7 +182,7 @@ FRPClient/FRPServer
 - Immutable tunnel models with `with_status()` method for state transitions
 
 ### Testing Strategy
-- **95% minimum coverage** enforced (currently at 95.97%)
+- **95% minimum coverage** enforced (currently at 96%)
 - Test files organized to mirror src structure
 - Mock external dependencies (subprocess, filesystem)
 - Integration tests marked with `@pytest.mark.integration`
@@ -197,11 +208,11 @@ FRPClient/FRPServer
 ## Common Development Tasks
 
 ### Adding New Features
-1. Write documentation first (`docs/qna/`)
-2. Write tests following TDD in appropriate test directory
-3. Implement with Pydantic models
-4. Update exports in `__init__.py`
-5. Ensure 95%+ coverage
+1. Write tests following TDD in appropriate test directory
+2. Implement with Pydantic models for data validation
+3. Update exports in `__init__.py`
+4. Ensure 95%+ coverage maintained
+5. Run all quality checks before committing
 
 ### Debugging Issues
 ```bash
@@ -234,17 +245,12 @@ uv run pytest -m integration
 - ✅ Client-side wrapper (Checkpoints 1-5)
 - ✅ Server-side wrapper with same patterns
 - ✅ 95%+ test coverage maintained
-- ✅ TDD approach with documentation first
-
-**Key Insights from Checkpoint 6**:
-- frps uses identical execution pattern as frpc (`./frps -c config.toml`)
-- ProcessManager fully reusable, only binary path differs
-- Pydantic validation prevents configuration errors
-- Dashboard configuration with password strength validation
+- ✅ ProcessManager moved to common module (layer violation fixed)
 
 **Next Steps**:
-- Checkpoint 7: Monitoring and metrics
-- Checkpoint 8: Examples and documentation
+- Checkpoints 7-11 are planned features (monitoring, CLI, TUI)
+- Checkpoint 12 (K8s Distributed System) is in design phase
+- See `plan/checkpoints/` for detailed roadmap
 
 ## API Stability
 
@@ -254,3 +260,21 @@ Stable APIs:
 - `TunnelManager` core methods
 
 Internal APIs may change between versions.
+
+## Future K8s Integration (Design Phase)
+
+The project plans to evolve into a Kubernetes-native distributed service proxy. Key planned features:
+
+- Custom Resource Definitions (CRDs) for declarative service management
+- Kubernetes Operator for automated lifecycle management
+- Service discovery integration with K8s APIs
+- mTLS certificate management with automatic rotation
+- Horizontal scaling with FRP group load balancing
+
+See `plan/checkpoints/checkpoint-12-k8s-distributed-system.md` for detailed design.
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
